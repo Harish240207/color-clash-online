@@ -121,7 +121,6 @@ socket.on("gameOver", ({ winnerId, winnerName }) => {
   } else {
     setInfo("🏆 " + winnerName + " wins!");
   }
-  // stop timer when game over
   if (timerInterval) {
     clearInterval(timerInterval);
     timerInterval = null;
@@ -183,6 +182,11 @@ function renderRoom() {
         <div class="card-color-label">${colorLabel}</div>
       </div>
     `;
+
+    // small pop animation when top card changes
+    topCardDiv.classList.remove("top-card-pop");
+    void topCardDiv.offsetWidth; // force reflow
+    topCardDiv.classList.add("top-card-pop");
   } else {
     topCardDiv.className = "card big-card";
     topCardDiv.textContent = "";
@@ -246,10 +250,55 @@ function renderHand(topCard) {
         return;
       }
       setError("");
+
+      // animate this card flying to the top card position
+      animateCardToCenter(btn);
+
       socket.emit("playCard", { cardIndex: index });
     });
     handCardsDiv.appendChild(btn);
   });
+}
+
+// ===== CARD DROP ANIMATION =====
+function animateCardToCenter(sourceEl) {
+  if (!topCardDiv) return;
+
+  const srcRect = sourceEl.getBoundingClientRect();
+  const destRect = topCardDiv.getBoundingClientRect();
+
+  const clone = sourceEl.cloneNode(true);
+  clone.classList.add("flying-card");
+  clone.style.position = "fixed";
+  clone.style.left = srcRect.left + "px";
+  clone.style.top = srcRect.top + "px";
+  clone.style.width = srcRect.width + "px";
+  clone.style.height = srcRect.height + "px";
+  clone.style.zIndex = "9999";
+
+  document.body.appendChild(clone);
+
+  const srcCenterX = srcRect.left + srcRect.width / 2;
+  const srcCenterY = srcRect.top + srcRect.height / 2;
+  const destCenterX = destRect.left + destRect.width / 2;
+  const destCenterY = destRect.top + destRect.height / 2;
+
+  const dx = destCenterX - srcCenterX;
+  const dy = destCenterY - srcCenterY;
+
+  // trigger transition
+  requestAnimationFrame(() => {
+    clone.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(0.9) rotate(8deg)`;
+    clone.style.opacity = "0.85";
+  });
+
+  clone.addEventListener(
+    "transitionend",
+    () => {
+      clone.remove();
+    },
+    { once: true }
+  );
 }
 
 // ===== TIMER UI =====

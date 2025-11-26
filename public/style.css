@@ -1,13 +1,54 @@
+/* ========= RESET / BASE ========= */
+
 * {
   box-sizing: border-box;
+}
+
+:root {
+  --bg-dark: #050710;
+  --bg-panel: rgba(16, 18, 32, 0.96);
+  --accent: #ffd54f;
+  --accent-soft: rgba(255, 213, 79, 0.18);
+  --border-soft: rgba(255, 255, 255, 0.08);
+  --text-soft: #d0d4ff;
 }
 
 body {
   margin: 0;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: radial-gradient(circle at top, #3a3a5a 0, #15151f 45%, #050509 100%);
+  background:
+    radial-gradient(circle at top, #3d5afe 0, #050710 55%, #020308 100%);
   color: #f5f5f5;
+  min-height: 100vh;
 }
+
+/* nice soft glow shapes in the background */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  width: 500px;
+  height: 500px;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.25;
+  z-index: -1;
+  pointer-events: none;
+}
+
+body::before {
+  background: #ff6f00;
+  top: -150px;
+  left: -120px;
+}
+
+body::after {
+  background: #00e5ff;
+  bottom: -200px;
+  right: -160px;
+}
+
+/* ========= MAIN APP LAYOUT ========= */
 
 #app {
   max-width: 1200px;
@@ -17,41 +58,67 @@ body {
 
 h1, h2, h3 {
   margin-top: 0;
+  font-weight: 700;
 }
 
 .hidden {
   display: none;
 }
 
-/* ========== JOIN SCREEN ========== */
+/* ========= JOIN SCREEN ========= */
+
+#join-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  padding-top: 40px;
+}
+
+#join-screen h1 {
+  font-size: 36px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: linear-gradient(120deg, #ffffff, #ffd54f);
+  -webkit-background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 30px rgba(0,0,0,0.7);
+}
 
 .card-panel {
-  background: rgba(15, 16, 28, 0.95);
-  padding: 24px;
-  border-radius: 16px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+  background: var(--bg-panel);
+  padding: 24px 26px;
+  border-radius: 20px;
+  box-shadow:
+    0 24px 50px rgba(0, 0, 0, 0.7),
+    0 0 0 1px var(--border-soft);
   max-width: 420px;
+  width: 100%;
+  backdrop-filter: blur(20px);
 }
 
 label {
   display: block;
   margin-bottom: 14px;
   font-size: 14px;
+  color: var(--text-soft);
 }
 
 input {
   width: 100%;
   padding: 10px 12px;
   border-radius: 10px;
-  border: 1px solid #444;
-  background: #11131d;
+  border: 1px solid #444a6a;
+  background: rgba(6, 8, 20, 0.9);
   color: #f5f5f5;
   margin-top: 4px;
   outline: none;
+  font-size: 14px;
 }
 
 input:focus {
-  border-color: #ffd54f;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 button {
@@ -61,21 +128,26 @@ button {
   cursor: pointer;
   font-size: 14px;
   margin-right: 8px;
-  background: #ffd54f;
+  background: var(--accent);
   color: #111;
   font-weight: 600;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.4);
-  transition: transform 0.05s ease, box-shadow 0.05s ease, opacity 0.1s;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  transition:
+    transform 0.08s ease,
+    box-shadow 0.08s ease,
+    opacity 0.1s,
+    background 0.15s ease;
 }
 
 button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 6px 14px rgba(0,0,0,0.55);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.6);
+  background: #ffe082;
 }
 
 button:active:not(:disabled) {
-  transform: translateY(0px);
-  box-shadow: 0 3px 6px rgba(0,0,0,0.5);
+  transform: translateY(1px);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
 }
 
 button:disabled {
@@ -83,7 +155,11 @@ button:disabled {
   cursor: not-allowed;
 }
 
-/* ========== GAME SCREEN LAYOUT ========== */
+/* ========= GAME SCREEN HEADER ========= */
+
+#game-screen {
+  padding-top: 12px;
+}
 
 #game-screen header {
   display: flex;
@@ -92,15 +168,25 @@ button:disabled {
   margin-bottom: 16px;
 }
 
-#room-info {
-  font-size: 13px;
-  background: rgba(15, 16, 28, 0.9);
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid #444;
+#game-screen header h1 {
+  font-size: 30px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: linear-gradient(120deg, #ffffff, #90caf9);
+  -webkit-background-clip: text;
+  color: transparent;
 }
 
-/* main table area */
+#room-info {
+  font-size: 13px;
+  background: rgba(16, 18, 32, 0.9);
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  box-shadow: 0 0 20px rgba(0,0,0,0.7);
+}
+
+/* ========= TABLE AREA ========= */
 
 #table-area {
   display: flex;
@@ -110,11 +196,19 @@ button:disabled {
 /* players panel */
 
 #players-panel {
-  width: 240px;
-  background: rgba(15, 16, 28, 0.95);
+  width: 250px;
+  background: var(--bg-panel);
   padding: 14px;
-  border-radius: 16px;
-  box-shadow: 0 22px 30px rgba(0,0,0,0.7);
+  border-radius: 18px;
+  box-shadow:
+    0 22px 40px rgba(0,0,0,0.8),
+    0 0 0 1px var(--border-soft);
+  backdrop-filter: blur(18px);
+}
+
+#players-panel h2 {
+  font-size: 18px;
+  margin-bottom: 8px;
 }
 
 #players-list {
@@ -132,14 +226,19 @@ button:disabled {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  transition: background 0.12s ease, transform 0.1s ease;
+}
+
+#players-list li:hover {
+  transform: translateY(-1px);
 }
 
 .player-me {
-  border: 2px solid #ffd54f;
+  border: 2px solid var(--accent);
 }
 
 .player-turn {
-  background: linear-gradient(135deg, #1565c0, #1e88e5);
+  background: radial-gradient(circle at top left, #42a5f5, #1a237e);
 }
 
 .player-host-tag {
@@ -155,13 +254,32 @@ button:disabled {
 
 #center-panel {
   flex: 1;
-  background: rgba(15, 16, 28, 0.95);
+  background: var(--bg-panel);
   padding: 16px;
-  border-radius: 16px;
-  box-shadow: 0 22px 30px rgba(0,0,0,0.7);
+  border-radius: 18px;
+  box-shadow:
+    0 22px 40px rgba(0,0,0,0.8),
+    0 0 0 1px var(--border-soft);
+  backdrop-filter: blur(18px);
   display: flex;
   flex-direction: column;
   gap: 10px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* slight shine at top of center panel */
+#center-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(255,255,255,0.08),
+    transparent 45%
+  );
+  pointer-events: none;
+  opacity: 0.7;
 }
 
 #status-text {
@@ -171,7 +289,8 @@ button:disabled {
 
 #turn-timer {
   font-size: 13px;
-  opacity: 0.85;
+  opacity: 0.9;
+  color: #ffcc80;
 }
 
 #top-card-area {
@@ -180,17 +299,18 @@ button:disabled {
   align-items: flex-start;
 }
 
-/* ========== CARDS ========== */
+/* ========= CARDS ========= */
 
 .card {
   border-radius: 16px;
-  border: 3px solid #fff;
+  border: 3px solid #ffffff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   box-shadow: 0 12px 22px rgba(0,0,0,0.7);
   background: #555;
   overflow: hidden;
+  will-change: transform;
 }
 
 .big-card {
@@ -202,6 +322,13 @@ button:disabled {
 .hand-card {
   width: 80px;
   height: 120px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+
+.hand-card:hover {
+  transform: translateY(-6px) rotate(-2deg);
+  box-shadow: 0 18px 26px rgba(0,0,0,0.85);
+  filter: brightness(1.05);
 }
 
 .card-content {
@@ -252,14 +379,21 @@ button:disabled {
   margin-top: 4px;
 }
 
-/* hand area */
+/* ========= HAND AREA ========= */
 
 #hand-area {
   margin-top: 18px;
-  background: rgba(15, 16, 28, 0.95);
+  background: var(--bg-panel);
   padding: 14px;
-  border-radius: 16px;
-  box-shadow: 0 22px 30px rgba(0,0,0,0.7);
+  border-radius: 18px;
+  box-shadow:
+    0 22px 40px rgba(0,0,0,0.8),
+    0 0 0 1px var(--border-soft);
+  backdrop-filter: blur(18px);
+}
+
+#hand-area h2 {
+  margin-bottom: 6px;
 }
 
 #hand-cards {
@@ -269,7 +403,7 @@ button:disabled {
   margin-top: 8px;
 }
 
-/* message area */
+/* ========= MESSAGES ========= */
 
 #message-area {
   margin-top: 10px;
@@ -285,4 +419,47 @@ button:disabled {
 #info-message {
   color: #a5d6a7;
   min-height: 18px;
+}
+
+/* ========= ANIMATIONS ========= */
+
+/* card flying from hand to center */
+.flying-card {
+  pointer-events: none;
+  transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+}
+
+/* little pop on the top card when it updates */
+.top-card-pop {
+  animation: topPop 0.18s ease-out;
+}
+
+@keyframes topPop {
+  0% {
+    transform: scale(0.92);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* ========= RESPONSIVE ========= */
+
+@media (max-width: 900px) {
+  #table-area {
+    flex-direction: column;
+  }
+
+  #players-panel {
+    width: 100%;
+    order: 2;
+  }
+
+  #center-panel {
+    order: 1;
+  }
+
+  #app {
+    padding: 16px;
+  }
 }
