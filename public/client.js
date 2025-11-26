@@ -136,6 +136,7 @@ socket.on("gameOver", ({ winnerId, winnerName }) => {
 function renderRoom() {
   if (!currentRoom) return;
 
+  // --- players list ---
   playersList.innerHTML = "";
   currentRoom.players.forEach((p, index) => {
     const li = document.createElement("li");
@@ -166,20 +167,32 @@ function renderRoom() {
     playersList.appendChild(li);
   });
 
+  // --- top card ---
   const topCard =
     currentRoom.discardPile[currentRoom.discardPile.length - 1] || null;
 
   if (topCard) {
-    topCardDiv.className = "card " + (topCard.color || "");
-    topCardDiv.textContent = formatCardLabel(topCard);
+    // add color class so background shows color
+    topCardDiv.className = "card big-card " + (topCard.color || "");
+    const colorLabel =
+      !topCard.color || topCard.color === "wild"
+        ? "ANY"
+        : topCard.color.toUpperCase();
+
+    topCardDiv.innerHTML = `
+      <div class="card-content">
+        <div class="card-symbol">${formatCardLabel(topCard)}</div>
+        <div class="card-color-label">${colorLabel}</div>
+      </div>
+    `;
   } else {
-    topCardDiv.className = "card";
+    topCardDiv.className = "card big-card";
     topCardDiv.textContent = "";
   }
 
+  // --- hand + buttons ---
   renderHand(topCard);
 
-  // buttons & status
   const myTurn = isMyTurn();
   const me = currentRoom.players.find((p) => p.id === myPlayerId);
   let canPlayAny = false;
@@ -206,7 +219,7 @@ function renderRoom() {
 
   startButton.disabled = !isHost() || currentRoom.started;
   drawButton.disabled = !myTurn;
-  // NEW: cannot pass if you still have a playable card
+  // cannot pass if you still have a playable card
   passButton.disabled = !myTurn || canPlayAny;
 }
 
@@ -218,14 +231,20 @@ function renderHand(topCard) {
 
   me.hand.forEach((card, index) => {
     const btn = document.createElement("button");
-    btn.className = "card " + (card.color || "");
-    btn.textContent = formatCardLabel(card);
+    btn.className = "card hand-card " + (card.color || "");
+    btn.innerHTML = `
+      <div class="card-content">
+        <div class="card-symbol">${formatCardLabel(card)}</div>
+        <div class="card-color-label">${
+          card.color ? card.color.toUpperCase() : ""
+        }</div>
+      </div>
+    `;
     btn.addEventListener("click", () => {
       if (!isMyTurn()) {
         setError("It's not your turn.");
         return;
       }
-      // optional: prevent playing invalid card client-side
       if (!canPlayClient(card, topCard)) {
         setError("You can't play that card.");
         return;
