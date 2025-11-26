@@ -1,0 +1,221 @@
+const socket = io();
+
+let myPlayerId = null;
+let currentRoom = null;
+
+const joinScreen = document.getElementById("join-screen");
+const gameScreen = document.getElementById("game-screen");
+
+const roomCodeInput = document.getElementById("room-code-input");
+const nameInput = document.getElementById("name-input");
+const joinButton = document.getElementById("join-button");
+const joinError = document.getElementById("join-error");
+
+const roomInfo = document.getElementById("room-info");
+const playersList = document.getElementById("players-list");
+const statusText = document.getElementById("status-text");
+const topCardDiv = document.getElementById("top-card");
+
+const startButton = document.getElementById("start-button");
+const drawButton = document.getElementById("draw-button");
+const passButton = document.getElementById("pass-button");
+
+const handCardsDiv = document.getElementById("hand-cards");
+
+const errorMessageDiv = document.getElementById("error-message");
+const infoMessageDiv = document.getElementById("info-message");
+
+// small helpers
+function formatCardLabel(card) {
+  switch (card.type) {
+    case "NUMBER":
+      return card.value;
+    case "SKIP":
+      return "⏭";
+    case "REVERSE":
+      return "🔄";
+    case "DRAW_TWO":
+      return "+2";
+    case "WILD":
+      return "★";
+    case "WILD_DRAW_FOUR":
+      return "+4";
+    default:
+      return "?";
+  }
+}
+
+function setError(msg) {
+  errorMessageDiv.textContent = msg || "";
+}
+
+function setInfo(msg) {
+  infoMessageDiv.textContent = msg || "";
+}
+
+function isMyTurn() {
+  if (!currentRoom || !currentRoom.players) return false;
+  const idx = currentRoom.players.findIndex((p) => p.id === myPlayerId);
+  return idx !== -1 && idx === currentRoom.currentTurnIndex && currentRoom.started;
+}
+
+function isHost() {
+  if (!currentRoom || !currentRoom.players) return false;
+  const me = currentRoom.players.find((p) => p.id === myPlayerId);
+  return !!(me && me.isHost);
+}
+
+// ===== JOIN FLOW =====
+joinButton.addEventListener("click", () => {
+  const roomCode = roomCodeInput.value.trim().toUpperCase();
+  const name = nameInput.value.trim();
+
+  if (!roomCode || !name) {
+    joinError.textContent = "Enter room code and name.";
+    return;
+  }
+  joinError.textContent = "";
+  socket.emit("joinRoom", { roomCode, playerName: name });
+});
+
+// ===== SOCKET EVENT HANDLERS =====
+socket.on("joinedRoom", ({ roomCode, playerId }) => {
+  myPlayerId = playerId;
+  setError("");
+  setInfo("");
+
+  joinScreen.classList.add("hidden");
+  gameScreen.classList.remove("hidden");
+
+  roomInfo.textContent = "Room: " + roomCode;
+});
+
+socket.on("gameState", (room) => {
+  currentRoom = room;
+  renderRoom();
+});
+
+socket.on("errorMessage", (msg) => {
+  setError(msg);
+});
+
+socket.on("gameOver", ({ winnerId, winnerName }) => {
+  if (winnerId === myPlayerId) {
+    setInfo("🎉 You win!");
+  } else {
+    setInfo("🏆 " + winnerName + " wins!");
+  }
+});
+
+// ===== RENDERING =====
+function renderRoom() {
+  if (!currentRoom) return;
+
+  // Players list
+  playersList.innerHTML = "";
+  currentRoom.players.forEach((p, index) => {
+    const li = document.createElement("li");
+    const leftSpan = document.createElement("span");
+    const rightSpan = document.createElement("span");
+
+    leftSpan.textContent = p.name;
+    if (p.id === myPlayerId) {
+      leftSpan.textContent += " (You)";
+      li.classList.add("player-me");
+    }
+
+    if (p.isHost) {
+      const hostTag = document.createElement("span");
+      hostTag.textContent = "HOST";
+      hostTag.className = "player-host-tag";
+      leftSpan.appendChild(hostTag);
+    }
+
+    rightSpan.textContent = `Cards: ${p.hand.length}`;
+
+    if (index === currentRoom.currentTurnIndex && currentRoom.started) {
+      li.classList.add("player-turn");
+    }
+
+    li.appendChild(leftSpan);
+    li.appendChild(rightSpan);
+    playersList.appendChild(li);
+  });
+
+  // Status text
+  if (!currentRoom.started) {
+    statusText.textContent = "Waiting for host to start. Players: " + currentRoom.players.length;
+  } else if (isMyTurn()) {
+    statusText.textContent = "Your turn: play a card, or draw & pass.";
+  } else {
+    const player = currentRoom.players[currentRoom.currentTurnIndex];
+    statusText.textContent = "Waiting for " + (player ? player.name : "player") + "...";
+  }
+
+  // Top card
+  const topCard = currentRoom.discardPile[currentRoom.discardPile.length - 1];
+  if (topCard) {
+    topCardDiv.className = "card " + (topCard.color || "");
+    topCardDiv.textContent = formatCardLabel(topCard);
+  } else {
+    topCardDiv.className = "card";
+    topCardDiv.textContent = "";
+  }
+
+  // Hand
+  renderHand();
+
+  // Buttons enable/disable
+  startButton.disabled = !isHost() || currentRoom.started;
+  drawButton.disabled = !isMyTurn();
+  passButton.disabled = !isMyTurn();
+}
+
+function renderHand() {
+  handCardsDiv.innerHTML = "";
+  if (!currentRoom) return;
+  const me = currentRoom.players.find((p) => p.id === myPlayerId);
+  if (!me) return;
+
+  me.hand.forEach((card, index) => {
+    const btn = document.createElement("button");
+    btn.className = "card " + (card.color || "");
+    btn.textContent = formatCardLabel(card);
+    btn.addEventListener("click", () => {
+      if (!isMyTurn()) {
+        setError("It's not your turn.");
+        return;
+      }
+      setError("");
+      socket.emit("playCard", { cardIndex: index });
+    });
+    handCardsDiv.appendChild(btn);
+  });
+}
+
+// ===== BUTTON ACTIONS =====
+startButton.addEventListener("click", () => {
+  if (!isHost()) {
+    setError("Only the host can start.");
+    return;
+  }
+  socket.emit("startGame");
+});
+
+drawButton.addEventListener("click", () => {
+  if (!isMyTurn()) {
+    setError("Not your turn.");
+    return;
+  }
+  setError("");
+  socket.emit("drawCard");
+});
+
+passButton.addEventListener("click", () => {
+  if (!isMyTurn()) {
+    setError("Not your turn.");
+    return;
+  }
+  setError("");
+  socket.emit("passTurn");
+});

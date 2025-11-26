@@ -1,0 +1,229 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #222;
+  color: #fff;
+}
+
+#app {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+h1, h2, h3 {
+  margin-top: 0;
+}
+
+.hidden {
+  display: none;
+}
+
+.card-panel {
+  background: #333;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.6);
+  max-width: 400px;
+}
+
+label {
+  display: block;
+  margin-bottom: 10px;
+}
+
+input {
+  width: 100%;
+  padding: 8px;
+  border-radius: 6px;
+  border: none;
+  margin-top: 4px;
+}
+
+button {
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  margin-right: 8px;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.error {
+  color: #ff6e6e;
+  margin-top: 8px;
+  min-height: 18px;
+}
+
+#game-screen header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+#room-info {
+  font-size: 14px;
+  background: #333;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+
+#table-area {
+  display: flex;
+  gap: 16px;
+}
+
+#players-panel {
+  width: 220px;
+  background: #333;
+  padding: 12px;
+  border-radius: 10px;
+}
+
+#players-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+#players-list li {
+  padding: 6px 8px;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  background: #444;
+  font-size: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.player-me {
+  border: 2px solid #ffd54f;
+}
+
+.player-turn {
+  background: #1565c0;
+}
+
+.player-host-tag {
+  font-size: 10px;
+  background: #ffb300;
+  color: #000;
+  padding: 2px 6px;
+  border-radius: 6px;
+  margin-left: 6px;
+}
+
+#center-panel {
+  flex: 1;
+  background: #333;
+  padding: 12px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#status-text {
+  min-height: 24px;
+}
+
+#top-card-area {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+#top-card {
+  width: 100px;
+  height: 150px;
+  border-radius: 12px;
+  border: 2px solid #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: bold;
+  margin-top: 6px;
+  background: #555;
+}
+
+.card {
+  width: 70px;
+  height: 110px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  border: 2px solid #fff;
+  margin-right: 6px;
+}
+
+.red {
+  background: #e53935;
+}
+
+.blue {
+  background: #1e88e5;
+}
+
+.green {
+  background: #43a047;
+}
+
+.yellow {
+  background: #fdd835;
+  color: #000;
+}
+
+.wild {
+  background: linear-gradient(45deg, #e53935, #fdd835, #43a047, #1e88e5);
+}
+
+#actions {
+  margin-top: 8px;
+}
+
+#hand-area {
+  margin-top: 16px;
+  background: #333;
+  padding: 12px;
+  border-radius: 10px;
+}
+
+#hand-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+#hand-cards button.card {
+  border: 2px solid #fff;
+}
+
+#message-area {
+  margin-top: 8px;
+  min-height: 30px;
+}
+
+#info-message {
+  color: #a5d6a7;
+  min-height: 18px;
+  margin-top: 2px;
+}

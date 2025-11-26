@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Color Clash Online</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="join-screen">
+      <h1>Color Clash Online</h1>
+      <div class="card-panel">
+        <label>
+          Room Code (e.g. ABCD):
+          <input id="room-code-input" maxlength="10" />
+        </label>
+        <label>
+          Your Name:
+          <input id="name-input" maxlength="20" />
+        </label>
+        <button id="join-button">Join / Create Room</button>
+        <div id="join-error" class="error"></div>
+      </div>
+    </div>
+
+    <div id="game-screen" class="hidden">
+      <header>
+        <h1>Color Clash Online</h1>
+        <div id="room-info"></div>
+      </header>
+
+      <section id="table-area">
+        <div id="players-panel">
+          <h2>Players</h2>
+          <ul id="players-list"></ul>
+        </div>
+
+        <div id="center-panel">
+          <div id="status-text"></div>
+          <div id="top-card-area">
+            <h3>Top Card</h3>
+            <div id="top-card" class="card"></div>
+          </div>
+
+          <div id="actions">
+            <button id="start-button">Start Game (Host)</button>
+            <button id="draw-button">Draw Card</button>
+            <button id="pass-button">Pass Turn</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="hand-area">
+        <h2>Your Hand</h2>
+        <div id="hand-cards"></div>
+      </section>
+
+      <div id="message-area">
+        <div id="error-message" class="error"></div>
+        <div id="info-message"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="client.js"></script>
+</body>
+</html>
