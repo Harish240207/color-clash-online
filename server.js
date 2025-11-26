@@ -21,26 +21,23 @@ const TYPES = {
 
 const MAX_PLAYERS_PER_ROOM = 10;
 const CARDS_PER_PLAYER = 7;
+const TURN_MS = 30_000; // 30 seconds
 
 // rooms: Map<roomCode, roomObject>
 const rooms = new Map();
+// timers: roomCode -> { timeoutId, deadline }
+const roomTimers = new Map();
 
 // ===== UTILS =====
 function createDeck() {
   const d = [];
 
-  // Number + action cards
   COLORS.forEach((color) => {
-    // one 0
     d.push(createCard(color, TYPES.NUMBER, 0));
-
-    // two each 1–9
     for (let n = 1; n <= 9; n++) {
       d.push(createCard(color, TYPES.NUMBER, n));
       d.push(createCard(color, TYPES.NUMBER, n));
     }
-
-    // two Skip, Reverse, Draw Two
     for (let i = 0; i < 2; i++) {
       d.push(createCard(color, TYPES.SKIP));
       d.push(createCard(color, TYPES.REVERSE));
@@ -48,7 +45,6 @@ function createDeck() {
     }
   });
 
-  // Wilds
   for (let i = 0; i < 4; i++) {
     d.push(createCard("wild", TYPES.WILD));
     d.push(createCard("wild", TYPES.WILD_DRAW_FOUR));
@@ -94,7 +90,6 @@ function createRoom(roomCode) {
 
 function drawCard(room, player) {
   if (room.deck.length === 0) {
-    // reshuffle discard pile (leave top card)
     if (room.discardPile.length > 1) {
       const top = room.discardPile.pop();
       room.deck = shuffle(room.discardPile);
@@ -147,8 +142,50 @@ function goToNextPlayer(room, steps = 1) {
   room.currentTurnIndex = getNextPlayerIndex(room, steps);
 }
 
+// ===== TURN TIMER =====
+function clearTurnTimer(roomCode) {
+  const data = roomTimers.get(roomCode);
+  if (data && data.timeoutId) clearTimeout(data.timeoutId);
+  roomTimers.delete(roomCode);
+}
+
+function startTurnTimer(room) {
+  const code = room.code;
+  clearTurnTimer(code);
+
+  const deadline = Date.now() + TURN_MS;
+
+  const timeoutId = setTimeout(() => {
+    const r = getRoom(code);
+    if (!r || !r.started || r.players.length === 0) return;
+
+    const player = r.players[r.currentTurnIndex];
+    if (!player) return;
+
+    // auto-draw 1 card and pass turn
+    drawCard(r, player);
+    goToNextPlayer(r, 1);
+    // start next player's timer THEN broadcast
+    startTurnTimer(r);
+    broadcastGameState(r);
+  }, TURN_MS);
+
+  roomTimers.set(code, { timeoutId, deadline });
+}
+
+function getTurnDeadline(roomCode) {
+  const data = roomTimers.get(roomCode);
+  return data ? data.deadline : null;
+}
+
+// ===== BROADCAST =====
 function broadcastGameState(room) {
-  io.to(room.code).emit("gameState", room);
+  const deadline = getTurnDeadline(room.code);
+  const publicState = {
+    ...room,
+    turnDeadline: deadline
+  };
+  io.to(room.code).emit("gameState", publicState);
 }
 
 function removePlayerFromRoom(socket) {
@@ -167,6 +204,7 @@ function removePlayerFromRoom(socket) {
   }
 
   if (room.players.length === 0) {
+    clearTurnTimer(roomCode);
     rooms.delete(roomCode);
   } else {
     if (!room.players.some((p) => p.isHost)) {
@@ -270,6 +308,7 @@ io.on("connection", (socket) => {
     room.discardPile.push(firstCard);
 
     room.started = true;
+    startTurnTimer(room);
     broadcastGameState(room);
   });
 
@@ -305,9 +344,11 @@ io.on("connection", (socket) => {
       return;
     }
 
+    // remove from hand
     player.hand.splice(cardIndex, 1);
     room.discardPile.push(card);
 
+    // wild color choose (simple auto choice)
     if (card.type === TYPES.WILD || card.type === TYPES.WILD_DRAW_FOUR) {
       const counts = { red: 0, blue: 0, green: 0, yellow: 0 };
       player.hand.forEach((c) => {
@@ -324,6 +365,7 @@ io.on("connection", (socket) => {
       card.color = bestColor;
     }
 
+    // Apply effects
     let extraSteps = 0;
     if (card.type === TYPES.SKIP) {
       extraSteps = 1;
@@ -344,17 +386,21 @@ io.on("connection", (socket) => {
       extraSteps = 1;
     }
 
+    // win check
     if (player.hand.length === 0) {
       io.to(room.code).emit("gameOver", {
         winnerId: player.id,
         winnerName: player.name
       });
       room.started = false;
+      clearTurnTimer(room.code);
       broadcastGameState(room);
       return;
     }
 
+    // next player
     goToNextPlayer(room, 1 + extraSteps);
+    startTurnTimer(room);
     broadcastGameState(room);
   });
 
@@ -373,38 +419,10 @@ io.on("connection", (socket) => {
     }
 
     const player = room.players[playerIndex];
+    // draw ONE card and auto-pass
     drawCard(room, player);
-    broadcastGameState(room);
-  });
-
-  socket.on("passTurn", () => {
-    const roomCode = socket.data.roomCode;
-    if (!roomCode) return;
-    const room = getRoom(roomCode);
-    if (!room || !room.started) return;
-
-    const playerIndex = room.players.findIndex((p) => p.id === socket.id);
-    if (playerIndex === -1) return;
-
-    if (playerIndex !== room.currentTurnIndex) {
-      socket.emit("errorMessage", "Not your turn.");
-      return;
-    }
-
-    const player = room.players[playerIndex];
-    const topCard = getTopCard(room);
-
-    // NEW RULE: you cannot pass if you still have a playable card
-    const canPlayAny = player.hand.some((c) => canPlay(c, topCard));
-    if (canPlayAny) {
-      socket.emit(
-        "errorMessage",
-        "You still have a playable card. Play it or draw instead."
-      );
-      return;
-    }
-
     goToNextPlayer(room, 1);
+    startTurnTimer(room);
     broadcastGameState(room);
   });
 

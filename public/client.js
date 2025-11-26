@@ -14,16 +14,18 @@ const joinError = document.getElementById("join-error");
 const roomInfo = document.getElementById("room-info");
 const playersList = document.getElementById("players-list");
 const statusText = document.getElementById("status-text");
+const turnTimerDiv = document.getElementById("turn-timer");
 const topCardDiv = document.getElementById("top-card");
 
 const startButton = document.getElementById("start-button");
 const drawButton = document.getElementById("draw-button");
-const passButton = document.getElementById("pass-button");
 
 const handCardsDiv = document.getElementById("hand-cards");
 
 const errorMessageDiv = document.getElementById("error-message");
 const infoMessageDiv = document.getElementById("info-message");
+
+let timerInterval = null;
 
 // ===== helpers =====
 function formatCardLabel(card) {
@@ -45,28 +47,17 @@ function formatCardLabel(card) {
   }
 }
 
-// client-side version of canPlay (same as server)
 function canPlayClient(card, topCard) {
   if (!topCard) return true;
-
-  if (card.type === "WILD" || card.type === "WILD_DRAW_FOUR") {
-    return true;
-  }
-
+  if (card.type === "WILD" || card.type === "WILD_DRAW_FOUR") return true;
   if (card.color === topCard.color) return true;
-
   if (
     card.type === "NUMBER" &&
     topCard.type === "NUMBER" &&
     card.value === topCard.value
-  ) {
+  )
     return true;
-  }
-
-  if (card.type === topCard.type && card.type !== "NUMBER") {
-    return true;
-  }
-
+  if (card.type === topCard.type && card.type !== "NUMBER") return true;
   return false;
 }
 
@@ -130,13 +121,19 @@ socket.on("gameOver", ({ winnerId, winnerName }) => {
   } else {
     setInfo("🏆 " + winnerName + " wins!");
   }
+  // stop timer when game over
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  turnTimerDiv.textContent = "";
 });
 
 // ===== RENDERING =====
 function renderRoom() {
   if (!currentRoom) return;
 
-  // --- players list ---
+  // players list
   playersList.innerHTML = "";
   currentRoom.players.forEach((p, index) => {
     const li = document.createElement("li");
@@ -167,12 +164,13 @@ function renderRoom() {
     playersList.appendChild(li);
   });
 
-  // --- top card ---
+  // top card
   const topCard =
-    currentRoom.discardPile[currentRoom.discardPile.length - 1] || null;
+    currentRoom.discardPile && currentRoom.discardPile.length
+      ? currentRoom.discardPile[currentRoom.discardPile.length - 1]
+      : null;
 
   if (topCard) {
-    // add color class so background shows color
     topCardDiv.className = "card big-card " + (topCard.color || "");
     const colorLabel =
       !topCard.color || topCard.color === "wild"
@@ -190,7 +188,7 @@ function renderRoom() {
     topCardDiv.textContent = "";
   }
 
-  // --- hand + buttons ---
+  // hand
   renderHand(topCard);
 
   const myTurn = isMyTurn();
@@ -205,11 +203,9 @@ function renderRoom() {
       "Waiting for host to start. Players: " + currentRoom.players.length;
   } else if (myTurn) {
     if (canPlayAny) {
-      statusText.textContent =
-        "Your turn: tap a card to play, or draw instead.";
+      statusText.textContent = "Your turn: tap a card to play, or draw 1 card.";
     } else {
-      statusText.textContent =
-        "You have no playable card. Draw a card or pass.";
+      statusText.textContent = "You have no playable card. Draw 1 card.";
     }
   } else {
     const player = currentRoom.players[currentRoom.currentTurnIndex];
@@ -219,8 +215,8 @@ function renderRoom() {
 
   startButton.disabled = !isHost() || currentRoom.started;
   drawButton.disabled = !myTurn;
-  // cannot pass if you still have a playable card
-  passButton.disabled = !myTurn || canPlayAny;
+
+  setupTimer();
 }
 
 function renderHand(topCard) {
@@ -256,6 +252,34 @@ function renderHand(topCard) {
   });
 }
 
+// ===== TIMER UI =====
+function setupTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+
+  if (!currentRoom || !currentRoom.started || !currentRoom.turnDeadline) {
+    turnTimerDiv.textContent = "";
+    return;
+  }
+
+  const update = () => {
+    if (!currentRoom || !currentRoom.turnDeadline) {
+      turnTimerDiv.textContent = "";
+      return;
+    }
+    const now = Date.now();
+    let remaining = currentRoom.turnDeadline - now;
+    if (remaining < 0) remaining = 0;
+    const seconds = Math.ceil(remaining / 1000);
+    turnTimerDiv.textContent = "Time left: " + seconds + "s";
+  };
+
+  update();
+  timerInterval = setInterval(update, 300);
+}
+
 // ===== BUTTON ACTIONS =====
 startButton.addEventListener("click", () => {
   if (!isHost()) {
@@ -273,13 +297,4 @@ drawButton.addEventListener("click", () => {
   }
   setError("");
   socket.emit("drawCard");
-});
-
-passButton.addEventListener("click", () => {
-  if (!isMyTurn()) {
-    setError("Not your turn.");
-    return;
-  }
-  setError("");
-  socket.emit("passTurn");
 });

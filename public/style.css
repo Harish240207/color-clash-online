@@ -161,12 +161,17 @@ button:disabled {
   box-shadow: 0 22px 30px rgba(0,0,0,0.7);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
 }
 
 #status-text {
   min-height: 24px;
   font-size: 14px;
+}
+
+#turn-timer {
+  font-size: 13px;
+  opacity: 0.85;
 }
 
 #top-card-area {
