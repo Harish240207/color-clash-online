@@ -21,7 +21,7 @@ const TYPES = {
 
 const MAX_PLAYERS_PER_ROOM = 10;
 const CARDS_PER_PLAYER = 7;
-const TURN_MS = 30_000; // 30 seconds
+const TURN_MS = 15_000; // 15 seconds per turn
 
 // rooms: Map<roomCode, roomObject>
 const rooms = new Map();
@@ -162,10 +162,9 @@ function startTurnTimer(room) {
     const player = r.players[r.currentTurnIndex];
     if (!player) return;
 
-    // auto-draw 1 card and pass turn
+    // timeout: auto-draw 1 card and pass turn
     drawCard(r, player);
     goToNextPlayer(r, 1);
-    // start next player's timer THEN broadcast
     startTurnTimer(r);
     broadcastGameState(r);
   }, TURN_MS);
@@ -419,9 +418,88 @@ io.on("connection", (socket) => {
     }
 
     const player = room.players[playerIndex];
-    // draw ONE card and auto-pass
-    drawCard(room, player);
-    goToNextPlayer(room, 1);
+    const topBeforeDraw = getTopCard(room);
+
+    // draw ONE card
+    const drawn = drawCard(room, player);
+
+    if (!drawn) {
+      // no card to draw -> just pass
+      goToNextPlayer(room, 1);
+      startTurnTimer(room);
+      broadcastGameState(room);
+      return;
+    }
+
+    // if drawn card is playable on previous top card, auto-play it
+    if (canPlay(drawn, topBeforeDraw)) {
+      // remove drawn from hand (it should be last)
+      const idx = player.hand.findIndex((c) => c.id === drawn.id);
+      if (idx !== -1) {
+        player.hand.splice(idx, 1);
+      }
+      room.discardPile.push(drawn);
+
+      // if wild, choose color automatically
+      if (
+        drawn.type === TYPES.WILD ||
+        drawn.type === TYPES.WILD_DRAW_FOUR
+      ) {
+        const counts = { red: 0, blue: 0, green: 0, yellow: 0 };
+        player.hand.forEach((c) => {
+          if (COLORS.includes(c.color)) counts[c.color]++;
+        });
+        let bestColor = "red";
+        let bestCount = -1;
+        for (const c of COLORS) {
+          if (counts[c] > bestCount) {
+            bestCount = counts[c];
+            bestColor = c;
+          }
+        }
+        drawn.color = bestColor;
+      }
+
+      // apply effects like in playCard
+      let extraSteps = 0;
+      if (drawn.type === TYPES.SKIP) {
+        extraSteps = 1;
+      } else if (drawn.type === TYPES.REVERSE) {
+        room.direction *= -1;
+      } else if (drawn.type === TYPES.DRAW_TWO) {
+        const nextIndex = getNextPlayerIndex(room);
+        const nextPlayer = room.players[nextIndex];
+        drawCard(room, nextPlayer);
+        drawCard(room, nextPlayer);
+        extraSteps = 1;
+      } else if (drawn.type === TYPES.WILD_DRAW_FOUR) {
+        const nextIndex = getNextPlayerIndex(room);
+        const nextPlayer = room.players[nextIndex];
+        for (let i = 0; i < 4; i++) {
+          drawCard(room, nextPlayer);
+        }
+        extraSteps = 1;
+      }
+
+      // win check (if player had 1 card before draw & auto-play)
+      if (player.hand.length === 0) {
+        io.to(room.code).emit("gameOver", {
+          winnerId: player.id,
+          winnerName: player.name
+        });
+        room.started = false;
+        clearTurnTimer(room.code);
+        broadcastGameState(room);
+        return;
+      }
+
+      // go to next player after auto-play
+      goToNextPlayer(room, 1 + extraSteps);
+    } else {
+      // drawn card not playable: keep in hand, just pass turn
+      goToNextPlayer(room, 1);
+    }
+
     startTurnTimer(room);
     broadcastGameState(room);
   });
