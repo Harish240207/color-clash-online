@@ -463,3 +463,40 @@ button:disabled {
     padding: 16px;
   }
 }
+/* ===== COLOR PICKER OVERLAY ===== */
+
+#color-picker-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5000;
+}
+
+#color-picker-overlay.hidden {
+  display: none;
+}
+
+.color-picker-dialog {
+  background: var(--bg-panel);
+  padding: 18px 20px;
+  border-radius: 16px;
+  box-shadow: 0 22px 40px rgba(0,0,0,0.9),
+              0 0 0 1px var(--border-soft);
+}
+
+.color-picker-dialog h3 {
+  margin: 0 0 10px 0;
+  font-size: 16px;
+}
+
+.color-picker-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.color-btn {
+  min-width: 64px;
+}

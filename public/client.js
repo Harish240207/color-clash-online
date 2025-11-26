@@ -25,7 +25,12 @@ const handCardsDiv = document.getElementById("hand-cards");
 const errorMessageDiv = document.getElementById("error-message");
 const infoMessageDiv = document.getElementById("info-message");
 
+const colorOverlay = document.getElementById("color-picker-overlay");
+const colorButtons = document.querySelectorAll("#color-picker-overlay .color-btn");
+
 let timerInterval = null;
+let pendingWildIndex = null;
+let pendingWildSourceEl = null;
 
 // ===== helpers =====
 function formatCardLabel(card) {
@@ -183,9 +188,9 @@ function renderRoom() {
       </div>
     `;
 
-    // small pop animation when top card changes
+    // small pop animation
     topCardDiv.classList.remove("top-card-pop");
-    void topCardDiv.offsetWidth; // force reflow
+    void topCardDiv.offsetWidth;
     topCardDiv.classList.add("top-card-pop");
   } else {
     topCardDiv.className = "card big-card";
@@ -251,14 +256,49 @@ function renderHand(topCard) {
       }
       setError("");
 
-      // animate this card flying to the top card position
-      animateCardToCenter(btn);
-
-      socket.emit("playCard", { cardIndex: index });
+      if (card.type === "WILD" || card.type === "WILD_DRAW_FOUR") {
+        // open color picker
+        pendingWildIndex = index;
+        pendingWildSourceEl = btn;
+        openColorPicker();
+      } else {
+        // normal card
+        animateCardToCenter(btn);
+        socket.emit("playCard", { cardIndex: index });
+      }
     });
     handCardsDiv.appendChild(btn);
   });
 }
+
+// ===== COLOR PICKER =====
+function openColorPicker() {
+  if (!colorOverlay) return;
+  colorOverlay.classList.remove("hidden");
+}
+
+function closeColorPicker() {
+  if (!colorOverlay) return;
+  colorOverlay.classList.add("hidden");
+  pendingWildIndex = null;
+  pendingWildSourceEl = null;
+}
+
+colorButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const chosenColor = btn.dataset.color;
+    if (pendingWildIndex == null || !pendingWildSourceEl) {
+      closeColorPicker();
+      return;
+    }
+    animateCardToCenter(pendingWildSourceEl);
+    socket.emit("playCard", {
+      cardIndex: pendingWildIndex,
+      chosenColor
+    });
+    closeColorPicker();
+  });
+});
 
 // ===== CARD DROP ANIMATION =====
 function animateCardToCenter(sourceEl) {
@@ -286,7 +326,6 @@ function animateCardToCenter(sourceEl) {
   const dx = destCenterX - srcCenterX;
   const dy = destCenterY - srcCenterY;
 
-  // trigger transition
   requestAnimationFrame(() => {
     clone.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(0.9) rotate(8deg)`;
     clone.style.opacity = "0.85";

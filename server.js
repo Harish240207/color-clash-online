@@ -311,7 +311,8 @@ io.on("connection", (socket) => {
     broadcastGameState(room);
   });
 
-  socket.on("playCard", ({ cardIndex }) => {
+  // NOTE: now accepts chosenColor for wild cards
+  socket.on("playCard", ({ cardIndex, chosenColor }) => {
     const roomCode = socket.data.roomCode;
     if (!roomCode) return;
     const room = getRoom(roomCode);
@@ -347,21 +348,14 @@ io.on("connection", (socket) => {
     player.hand.splice(cardIndex, 1);
     room.discardPile.push(card);
 
-    // wild color choose (simple auto choice)
+    // wild color chosen by player
     if (card.type === TYPES.WILD || card.type === TYPES.WILD_DRAW_FOUR) {
-      const counts = { red: 0, blue: 0, green: 0, yellow: 0 };
-      player.hand.forEach((c) => {
-        if (COLORS.includes(c.color)) counts[c.color]++;
-      });
-      let bestColor = "red";
-      let bestCount = -1;
-      for (const c of COLORS) {
-        if (counts[c] > bestCount) {
-          bestCount = counts[c];
-          bestColor = c;
-        }
+      let color = (chosenColor || "").toLowerCase();
+      if (!COLORS.includes(color)) {
+        // fallback (shouldn't happen if client is correct)
+        color = COLORS[0];
       }
-      card.color = bestColor;
+      card.color = color;
     }
 
     // Apply effects
@@ -440,7 +434,7 @@ io.on("connection", (socket) => {
       }
       room.discardPile.push(drawn);
 
-      // if wild, choose color automatically
+      // if wild, choose color automatically (no time for popup here)
       if (
         drawn.type === TYPES.WILD ||
         drawn.type === TYPES.WILD_DRAW_FOUR
@@ -481,7 +475,7 @@ io.on("connection", (socket) => {
         extraSteps = 1;
       }
 
-      // win check (if player had 1 card before draw & auto-play)
+      // win check
       if (player.hand.length === 0) {
         io.to(room.code).emit("gameOver", {
           winnerId: player.id,
