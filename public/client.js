@@ -25,7 +25,7 @@ const handCardsDiv = document.getElementById("hand-cards");
 const errorMessageDiv = document.getElementById("error-message");
 const infoMessageDiv = document.getElementById("info-message");
 
-// small helpers
+// ===== helpers =====
 function formatCardLabel(card) {
   switch (card.type) {
     case "NUMBER":
@@ -43,6 +43,31 @@ function formatCardLabel(card) {
     default:
       return "?";
   }
+}
+
+// client-side version of canPlay (same as server)
+function canPlayClient(card, topCard) {
+  if (!topCard) return true;
+
+  if (card.type === "WILD" || card.type === "WILD_DRAW_FOUR") {
+    return true;
+  }
+
+  if (card.color === topCard.color) return true;
+
+  if (
+    card.type === "NUMBER" &&
+    topCard.type === "NUMBER" &&
+    card.value === topCard.value
+  ) {
+    return true;
+  }
+
+  if (card.type === topCard.type && card.type !== "NUMBER") {
+    return true;
+  }
+
+  return false;
 }
 
 function setError(msg) {
@@ -78,7 +103,7 @@ joinButton.addEventListener("click", () => {
   socket.emit("joinRoom", { roomCode, playerName: name });
 });
 
-// ===== SOCKET EVENT HANDLERS =====
+// ===== SOCKET EVENTS =====
 socket.on("joinedRoom", ({ roomCode, playerId }) => {
   myPlayerId = playerId;
   setError("");
@@ -111,7 +136,6 @@ socket.on("gameOver", ({ winnerId, winnerName }) => {
 function renderRoom() {
   if (!currentRoom) return;
 
-  // Players list
   playersList.innerHTML = "";
   currentRoom.players.forEach((p, index) => {
     const li = document.createElement("li");
@@ -142,18 +166,9 @@ function renderRoom() {
     playersList.appendChild(li);
   });
 
-  // Status text
-  if (!currentRoom.started) {
-    statusText.textContent = "Waiting for host to start. Players: " + currentRoom.players.length;
-  } else if (isMyTurn()) {
-    statusText.textContent = "Your turn: play a card, or draw & pass.";
-  } else {
-    const player = currentRoom.players[currentRoom.currentTurnIndex];
-    statusText.textContent = "Waiting for " + (player ? player.name : "player") + "...";
-  }
+  const topCard =
+    currentRoom.discardPile[currentRoom.discardPile.length - 1] || null;
 
-  // Top card
-  const topCard = currentRoom.discardPile[currentRoom.discardPile.length - 1];
   if (topCard) {
     topCardDiv.className = "card " + (topCard.color || "");
     topCardDiv.textContent = formatCardLabel(topCard);
@@ -162,16 +177,40 @@ function renderRoom() {
     topCardDiv.textContent = "";
   }
 
-  // Hand
-  renderHand();
+  renderHand(topCard);
 
-  // Buttons enable/disable
+  // buttons & status
+  const myTurn = isMyTurn();
+  const me = currentRoom.players.find((p) => p.id === myPlayerId);
+  let canPlayAny = false;
+  if (me && topCard) {
+    canPlayAny = me.hand.some((c) => canPlayClient(c, topCard));
+  }
+
+  if (!currentRoom.started) {
+    statusText.textContent =
+      "Waiting for host to start. Players: " + currentRoom.players.length;
+  } else if (myTurn) {
+    if (canPlayAny) {
+      statusText.textContent =
+        "Your turn: tap a card to play, or draw instead.";
+    } else {
+      statusText.textContent =
+        "You have no playable card. Draw a card or pass.";
+    }
+  } else {
+    const player = currentRoom.players[currentRoom.currentTurnIndex];
+    statusText.textContent =
+      "Waiting for " + (player ? player.name : "player") + "...";
+  }
+
   startButton.disabled = !isHost() || currentRoom.started;
-  drawButton.disabled = !isMyTurn();
-  passButton.disabled = !isMyTurn();
+  drawButton.disabled = !myTurn;
+  // NEW: cannot pass if you still have a playable card
+  passButton.disabled = !myTurn || canPlayAny;
 }
 
-function renderHand() {
+function renderHand(topCard) {
   handCardsDiv.innerHTML = "";
   if (!currentRoom) return;
   const me = currentRoom.players.find((p) => p.id === myPlayerId);
@@ -184,6 +223,11 @@ function renderHand() {
     btn.addEventListener("click", () => {
       if (!isMyTurn()) {
         setError("It's not your turn.");
+        return;
+      }
+      // optional: prevent playing invalid card client-side
+      if (!canPlayClient(card, topCard)) {
+        setError("You can't play that card.");
         return;
       }
       setError("");
@@ -199,6 +243,7 @@ startButton.addEventListener("click", () => {
     setError("Only the host can start.");
     return;
   }
+  setError("");
   socket.emit("startGame");
 });
 

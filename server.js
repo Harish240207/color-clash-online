@@ -59,7 +59,7 @@ function createDeck() {
 
 function createCard(color, type, value = null) {
   return {
-    id: Math.random().toString(36).slice(2), // simple unique id
+    id: Math.random().toString(36).slice(2),
     color,
     type,
     value
@@ -148,7 +148,6 @@ function goToNextPlayer(room, steps = 1) {
 }
 
 function broadcastGameState(room) {
-  // Send whole room state (simple, not cheat-proof)
   io.to(room.code).emit("gameState", room);
 }
 
@@ -163,7 +162,6 @@ function removePlayerFromRoom(socket) {
 
   room.players.splice(index, 1);
 
-  // adjust currentTurnIndex
   if (room.currentTurnIndex >= room.players.length) {
     room.currentTurnIndex = 0;
   }
@@ -171,7 +169,6 @@ function removePlayerFromRoom(socket) {
   if (room.players.length === 0) {
     rooms.delete(roomCode);
   } else {
-    // if host left, make first player host
     if (!room.players.some((p) => p.isHost)) {
       room.players[0].isHost = true;
     }
@@ -212,7 +209,7 @@ io.on("connection", (socket) => {
       id: socket.id,
       name: playerName,
       hand: [],
-      isHost: room.players.length === 0 // first player is host
+      isHost: room.players.length === 0
     };
 
     room.players.push(newPlayer);
@@ -255,17 +252,14 @@ io.on("connection", (socket) => {
     room.currentTurnIndex = 0;
     room.direction = 1;
 
-    // clear all hands
     room.players.forEach((p) => {
       p.hand = [];
     });
 
-    // deal cards
     for (let i = 0; i < CARDS_PER_PLAYER; i++) {
       room.players.forEach((p) => drawCard(room, p));
     }
 
-    // start discard with non-wild
     let firstCard;
     do {
       firstCard = room.deck.pop();
@@ -311,13 +305,10 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // remove from hand
     player.hand.splice(cardIndex, 1);
     room.discardPile.push(card);
 
-    // handle wild color selection
     if (card.type === TYPES.WILD || card.type === TYPES.WILD_DRAW_FOUR) {
-      // Expect color from client, but to keep simple we pick color based on player's hand
       const counts = { red: 0, blue: 0, green: 0, yellow: 0 };
       player.hand.forEach((c) => {
         if (COLORS.includes(c.color)) counts[c.color]++;
@@ -333,7 +324,6 @@ io.on("connection", (socket) => {
       card.color = bestColor;
     }
 
-    // Apply effects
     let extraSteps = 0;
     if (card.type === TYPES.SKIP) {
       extraSteps = 1;
@@ -354,7 +344,6 @@ io.on("connection", (socket) => {
       extraSteps = 1;
     }
 
-    // check win
     if (player.hand.length === 0) {
       io.to(room.code).emit("gameOver", {
         winnerId: player.id,
@@ -399,6 +388,19 @@ io.on("connection", (socket) => {
 
     if (playerIndex !== room.currentTurnIndex) {
       socket.emit("errorMessage", "Not your turn.");
+      return;
+    }
+
+    const player = room.players[playerIndex];
+    const topCard = getTopCard(room);
+
+    // NEW RULE: you cannot pass if you still have a playable card
+    const canPlayAny = player.hand.some((c) => canPlay(c, topCard));
+    if (canPlayAny) {
+      socket.emit(
+        "errorMessage",
+        "You still have a playable card. Play it or draw instead."
+      );
       return;
     }
 
