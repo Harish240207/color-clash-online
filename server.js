@@ -96,7 +96,7 @@ function createRoom(roomCode) {
 function drawCard(room, player) {
   if (!player) return null;
 
-  // whenever hand changes, clear UNO
+  // whenever hand changes, clear UNO (you must arm it again)
   player.unoArmed = false;
 
   if (room.deck.length === 0) {
@@ -186,7 +186,7 @@ function sortHands(room) {
 
 // ===== TEAMS =====
 // 4 players -> 2v2: [0,2] vs [1,3]
-// 8 players -> 4v4: [0,2,4,6] vs [1,3,5,7]
+// 8 players -> 4v4: even indices vs odd indices
 function assignTeams(room) {
   const n = room.players.length;
   room.players.forEach((p) => {
