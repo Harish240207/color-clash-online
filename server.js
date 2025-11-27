@@ -1,3 +1,7 @@
+// ============================================================
+//  SERVER FOR COLOR CLASH ONLINE
+// ============================================================
+
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -8,646 +12,432 @@ const io = new Server(server);
 
 app.use(express.static("public"));
 
-// ===== GAME CONSTANTS =====
-const COLORS = ["red", "yellow", "green", "blue"];
-const TYPES = {
-  NUMBER: "NUMBER",
-  SKIP: "SKIP",
-  REVERSE: "REVERSE",
-  DRAW_TWO: "DRAW_TWO",
-  WILD: "WILD",
-  WILD_DRAW_FOUR: "WILD_DRAW_FOUR",
-};
-
-const MAX_PLAYERS_PER_ROOM = 10;
-const CARDS_PER_PLAYER = 7;
-const TURN_MS = 15_000; // 15 seconds per turn
-
-// rooms: Map<roomCode, roomObject>
+// Rooms structure:
+// rooms = Map<roomCode, {
+//   players: [{id,name,avatar,hand,coins,isHost,team}],
+//   deck: [],
+//   discardPile: [],
+//   started: false,
+//   currentTurnIndex: 0,
+//   turnDeadline: 0
+// }>
 const rooms = new Map();
-// timers: roomCode -> { timeoutId, deadline }
-const roomTimers = new Map();
 
-// ===== UTILS =====
+// ============================================================
+//  CARD CREATION
+// ============================================================
 function createDeck() {
-  const d = [];
+  const colors = ["red", "yellow", "green", "blue"];
+  const deck = [];
 
-  COLORS.forEach((color) => {
-    // one 0
-    d.push(createCard(color, TYPES.NUMBER, 0));
-    // two of each 1–9
-    for (let n = 1; n <= 9; n++) {
-      d.push(createCard(color, TYPES.NUMBER, n));
-      d.push(createCard(color, TYPES.NUMBER, n));
+  for (const c of colors) {
+    deck.push({ type: "NUMBER", color: c, value: 0 });
+    for (let v = 1; v <= 9; v++) {
+      deck.push({ type: "NUMBER", color: c, value: v });
+      deck.push({ type: "NUMBER", color: c, value: v });
     }
-    // two of each action
-    for (let i = 0; i < 2; i++) {
-      d.push(createCard(color, TYPES.SKIP));
-      d.push(createCard(color, TYPES.REVERSE));
-      d.push(createCard(color, TYPES.DRAW_TWO));
-    }
-  });
+    deck.push({ type: "SKIP", color: c });
+    deck.push({ type: "SKIP", color: c });
+    deck.push({ type: "REVERSE", color: c });
+    deck.push({ type: "REVERSE", color: c });
+    deck.push({ type: "DRAW_TWO", color: c });
+    deck.push({ type: "DRAW_TWO", color: c });
+  }
 
-  // wilds
   for (let i = 0; i < 4; i++) {
-    d.push(createCard("wild", TYPES.WILD));
-    d.push(createCard("wild", TYPES.WILD_DRAW_FOUR));
+    deck.push({ type: "WILD" });
+    deck.push({ type: "WILD_DRAW_FOUR" });
   }
 
-  return shuffle(d);
+  shuffle(deck);
+  return deck;
 }
 
-function createCard(color, type, value = null) {
-  return {
-    id: Math.random().toString(36).slice(2),
-    color,
-    type,
-    value,
-  };
-}
-
-function shuffle(array) {
-  for (let i = array.length - 1; i > 0; i--) {
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
+    [arr[i], arr[j]] = [arr[j], arr[i]];
   }
-  return array;
 }
 
-function getRoom(roomCode) {
-  return rooms.get(roomCode);
+// ============================================================
+//  SYNC GAME STATE
+// ============================================================
+function broadcastState(roomCode) {
+  const room = rooms.get(roomCode);
+  if (!room) return;
+  io.to(roomCode).emit("gameState", room);
 }
 
-function createRoom(roomCode) {
-  const room = {
-    code: roomCode,
-    players: [],
-    deck: [],
-    discardPile: [],
-    currentTurnIndex: 0,
-    direction: 1,
-    started: false,
-  };
-  rooms.set(roomCode, room);
-  return room;
+// ============================================================
+//  TURN TIMER
+// ============================================================
+function startTurnTimer(roomCode) {
+  const room = rooms.get(roomCode);
+  if (!room) return;
+
+  const duration = 15000; // 15 seconds
+  room.turnDeadline = Date.now() + duration;
+  broadcastState(roomCode);
+
+  if (room.timer) clearTimeout(room.timer);
+
+  room.timer = setTimeout(() => {
+    forceAutoMove(roomCode);
+  }, duration);
 }
 
-// draw one card into player’s hand
-function drawCard(room, player) {
-  if (!player) return null;
+function forceAutoMove(roomCode) {
+  const room = rooms.get(roomCode);
+  if (!room) return;
 
-  // whenever hand changes, clear UNO (you must arm it again)
-  player.unoArmed = false;
+  const player = room.players[room.currentTurnIndex];
+  if (!player) return;
 
-  if (room.deck.length === 0) {
-    // reshuffle discard (except top)
-    if (room.discardPile.length > 1) {
-      const top = room.discardPile.pop();
-      room.deck = shuffle(room.discardPile);
-      room.discardPile = [top];
+  // Auto draw 1 card
+  if (room.deck.length === 0) reshuffle(room);
+  const drawn = room.deck.pop();
+  player.hand.push(drawn);
+
+  // Try to auto-play it
+  const top = room.discardPile[room.discardPile.length - 1];
+  const playable = canPlay(drawn, top);
+
+  if (playable) {
+    if (drawn.type === "WILD" || drawn.type === "WILD_DRAW_FOUR") {
+      drawn.color = ["red","yellow","green","blue"][Math.floor(Math.random()*4)];
     }
+    room.discardPile.push(drawn);
+    player.hand.pop();
+    applyCardEffect(drawn, room);
   }
-  if (room.deck.length === 0) {
-    return null;
-  }
-  const card = room.deck.pop();
-  player.hand.push(card);
-  return card;
+
+  advanceTurn(roomCode);
 }
 
-function getTopCard(room) {
-  return room.discardPile[room.discardPile.length - 1];
-}
-
-function canPlay(card, topCard) {
-  if (!topCard) return true;
-
-  if (card.type === TYPES.WILD || card.type === TYPES.WILD_DRAW_FOUR) {
+// ============================================================
+//  CAN PLAY RULE
+// ============================================================
+function canPlay(card, top) {
+  if (!top) return true;
+  if (card.type === "WILD" || card.type === "WILD_DRAW_FOUR") return true;
+  if (card.color === top.color) return true;
+  if (card.type === "NUMBER" && top.type === "NUMBER" && card.value === top.value)
     return true;
-  }
-
-  if (card.color === topCard.color) return true;
-
-  if (
-    card.type === TYPES.NUMBER &&
-    topCard.type === TYPES.NUMBER &&
-    card.value === topCard.value
-  ) {
-    return true;
-  }
-
-  if (card.type === topCard.type && card.type !== TYPES.NUMBER) {
-    return true;
-  }
-
+  if (card.type === top.type && card.type !== "NUMBER") return true;
   return false;
 }
 
-function getNextPlayerIndex(room, steps = 1) {
-  const num = room.players.length;
-  if (num === 0) return 0;
-  return (room.currentTurnIndex + room.direction * steps + num) % num;
-}
+// ============================================================
+//  CARD EFFECTS
+// ============================================================
+function applyCardEffect(card, room) {
+  const idx = room.currentTurnIndex;
 
-function goToNextPlayer(room, steps = 1) {
-  room.currentTurnIndex = getNextPlayerIndex(room, steps);
-}
-
-// ===== SORT HANDS BY COLOR/NUMBER (server-side) =====
-const COLOR_ORDER = { red: 0, yellow: 1, green: 2, blue: 3, wild: 4 };
-const TYPE_ORDER = {
-  [TYPES.NUMBER]: 0,
-  [TYPES.SKIP]: 1,
-  [TYPES.REVERSE]: 2,
-  [TYPES.DRAW_TWO]: 3,
-  [TYPES.WILD]: 4,
-  [TYPES.WILD_DRAW_FOUR]: 5,
-};
-
-function compareCards(a, b) {
-  const ca = COLOR_ORDER[a.color] ?? 99;
-  const cb = COLOR_ORDER[b.color] ?? 99;
-  if (ca !== cb) return ca - cb;
-
-  if (a.type === TYPES.NUMBER && b.type === TYPES.NUMBER) {
-    return (a.value ?? 0) - (b.value ?? 0);
+  if (card.type === "SKIP") {
+    room.currentTurnIndex = (idx + 2) % room.players.length;
+    return;
   }
 
-  const ta = TYPE_ORDER[a.type] ?? 99;
-  const tb = TYPE_ORDER[b.type] ?? 99;
-  return ta - tb;
-}
+  if (card.type === "REVERSE") {
+    room.players.reverse();
+    room.currentTurnIndex = room.players.length - 1 - idx;
+    return;
+  }
 
-function sortHands(room) {
-  room.players.forEach((p) => {
-    p.hand.sort(compareCards);
-  });
-}
+  if (card.type === "DRAW_TWO") {
+    const next = (idx + 1) % room.players.length;
+    drawCards(room.players[next], room, 2);
+    room.currentTurnIndex = (idx + 2) % room.players.length;
+    return;
+  }
 
-// ===== TEAMS =====
-// 4 players -> 2v2: [0,2] vs [1,3]
-// 8 players -> 4v4: even indices vs odd indices
-function assignTeams(room) {
-  const n = room.players.length;
-  room.players.forEach((p) => {
-    p.team = null;
-  });
-
-  if (n === 4) {
-    room.players[0].team = 0;
-    room.players[2].team = 0;
-    room.players[1].team = 1;
-    room.players[3].team = 1;
-  } else if (n === 8) {
-    for (let i = 0; i < n; i++) {
-      room.players[i].team = i % 2; // 0,1,0,1,…
-    }
+  if (card.type === "WILD_DRAW_FOUR") {
+    const next = (idx + 1) % room.players.length;
+    drawCards(room.players[next], room, 4);
+    // Move turn by 2
+    room.currentTurnIndex = (idx + 2) % room.players.length;
+    return;
   }
 }
 
-// ===== TURN TIMER =====
-
-function clearTurnTimer(roomCode) {
-  const data = roomTimers.get(roomCode);
-  if (data && data.timeoutId) clearTimeout(data.timeoutId);
-  roomTimers.delete(roomCode);
+function drawCards(player, room, count) {
+  for (let i = 0; i < count; i++) {
+    if (room.deck.length === 0) reshuffle(room);
+    player.hand.push(room.deck.pop());
+  }
 }
 
-function startTurnTimer(room) {
-  const code = room.code;
-  clearTurnTimer(code);
-
-  // reset UNO flags at start of every turn
-  room.players.forEach((p) => {
-    p.unoArmed = false;
-  });
-
-  const deadline = Date.now() + TURN_MS;
-
-  const timeoutId = setTimeout(() => {
-    const r = getRoom(code);
-    if (!r || !r.started || r.players.length === 0) return;
-
-    const player = r.players[r.currentTurnIndex];
-    if (!player) return;
-
-    // timeout: auto-draw 1 card and pass turn
-    drawCard(r, player);
-    goToNextPlayer(r, 1);
-    startTurnTimer(r);
-    broadcastGameState(r);
-  }, TURN_MS);
-
-  roomTimers.set(code, { timeoutId, deadline });
+function reshuffle(room) {
+  const last = room.discardPile.pop();
+  room.deck = room.discardPile;
+  shuffle(room.deck);
+  room.discardPile = [last];
 }
 
-function getTurnDeadline(roomCode) {
-  const data = roomTimers.get(roomCode);
-  return data ? data.deadline : null;
-}
-
-// ===== BROADCAST =====
-function broadcastGameState(room) {
-  sortHands(room); // keep hands ordered
-  const deadline = getTurnDeadline(room.code);
-
-  const publicState = {
-    ...room,
-    turnDeadline: deadline,
-  };
-  io.to(room.code).emit("gameState", publicState);
-}
-
-function removePlayerFromRoom(socket) {
-  const roomCode = socket.data.roomCode;
-  if (!roomCode) return;
-  const room = getRoom(roomCode);
+// ============================================================
+//  ADVANCE TURN
+// ============================================================
+function advanceTurn(roomCode) {
+  const room = rooms.get(roomCode);
   if (!room) return;
 
-  const index = room.players.findIndex((p) => p.id === socket.id);
-  if (index === -1) return;
+  // Win check
+  const winner = room.players.find(p => p.hand.length === 0);
+  if (winner) return endGame(roomCode, winner.id);
 
-  room.players.splice(index, 1);
-
-  if (room.currentTurnIndex >= room.players.length) {
-    room.currentTurnIndex = 0;
-  }
-
-  if (room.players.length === 0) {
-    clearTurnTimer(roomCode);
-    rooms.delete(roomCode);
-  } else {
-    if (!room.players.some((p) => p.isHost)) {
-      room.players[0].isHost = true;
-    }
-    broadcastGameState(room);
-  }
+  room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
+  startTurnTimer(roomCode);
+  broadcastState(roomCode);
 }
 
-// helper for color counts
-function COUNTS_HAS_COLOR(color) {
-  return COLORS.includes(color);
+// ============================================================
+//  END GAME + COINS + LEADERBOARD
+// ============================================================
+function endGame(roomCode, winnerId) {
+  const room = rooms.get(roomCode);
+  if (!room) return;
+
+  const pot = room.players.length * 200;
+  const winner = room.players.find(p => p.id === winnerId);
+  if (winner) winner.coins += pot;
+
+  const standings = room.players.map(p => ({
+    id: p.id,
+    name: p.name,
+    coins: p.coins,
+    avatar: p.avatar,
+    isWinner: p.id === winnerId
+  }));
+
+  io.to(roomCode).emit("gameOver", { standings });
+
+  room.started = false;
+  room.turnDeadline = null;
+  if (room.timer) clearTimeout(room.timer);
+
+  broadcastState(roomCode);
 }
 
-// ===== SOCKET.IO LOGIC =====
+// ============================================================
+//  SOCKET.IO HANDLERS
+// ============================================================
 io.on("connection", (socket) => {
-  console.log("New client connected:", socket.id);
 
-  socket.on("joinRoom", ({ roomCode, playerName }) => {
-    roomCode = (roomCode || "").trim().toUpperCase();
-    if (!roomCode || !playerName) {
-      socket.emit("errorMessage", "Room code and name are required.");
-      return;
+  // ---------------------------
+  // JOIN ROOM
+  // ---------------------------
+  socket.on("joinRoom", ({ roomCode, name, avatar }) => {
+    roomCode = roomCode.toUpperCase();
+    if (!rooms.has(roomCode)) {
+      rooms.set(roomCode, {
+        players: [],
+        deck: [],
+        discardPile: [],
+        started: false,
+        currentTurnIndex: 0,
+        turnDeadline: 0,
+        timer: null
+      });
     }
 
-    let room = getRoom(roomCode);
-    if (!room) {
-      room = createRoom(roomCode);
-    }
+    const room = rooms.get(roomCode);
 
-    if (room.started) {
-      socket.emit("errorMessage", "Game already started in this room.");
-      return;
-    }
+    if (room.started)
+      return socket.emit("errorMessage", "Game already started.");
 
-    if (room.players.length >= MAX_PLAYERS_PER_ROOM) {
-      socket.emit(
-        "errorMessage",
-        "Room is full. Max players: " + MAX_PLAYERS_PER_ROOM
-      );
-      return;
-    }
+    const isHost = room.players.length === 0;
 
-    const newPlayer = {
+    const player = {
       id: socket.id,
-      name: playerName,
+      name,
+      avatar,
       hand: [],
-      isHost: room.players.length === 0,
+      coins: 10000,
+      isHost,
       team: null,
-      unoArmed: false,
+      pressedUno: false
     };
 
-    room.players.push(newPlayer);
+    room.players.push(player);
 
     socket.join(roomCode);
-    socket.data.roomCode = roomCode;
+    socket.emit("joinedRoom", { roomCode, playerId: socket.id });
 
-    socket.emit("joinedRoom", {
-      roomCode,
-      playerId: socket.id,
-    });
-
-    broadcastGameState(room);
+    broadcastState(roomCode);
   });
 
+  // ---------------------------
+  // START GAME
+  // ---------------------------
   socket.on("startGame", () => {
-    const roomCode = socket.data.roomCode;
-    if (!roomCode) return;
-    const room = getRoom(roomCode);
-    if (!room) return;
+  const roomCode = findRoom(socket.id);
+  if (!roomCode) return;
 
-    const player = room.players.find((p) => p.id === socket.id);
-    if (!player || !player.isHost) {
-      socket.emit("errorMessage", "Only the host can start the game.");
-      return;
+  const room = rooms.get(roomCode);
+
+  // Only host can start
+  const host = room.players.find(p => p.isHost);
+  if (!host || host.id !== socket.id) {
+    return socket.emit("errorMessage", "Only the host can start the game.");
+  }
+
+  // Already started?
+  if (room.started) {
+    return socket.emit("errorMessage", "Game already started.");
+  }
+
+  // At least 2 players
+  if (room.players.length < 2) {
+    return socket.emit("errorMessage", "At least 2 players are required to start.");
+  }
+
+  // ===== NORMAL START LOGIC =====
+  room.deck = createDeck();
+  room.discardPile = [];
+  room.started = true;
+
+  // Deduct entry fee
+  room.players.forEach(p => p.coins -= 200);
+
+  // Deal 7 cards
+  room.players.forEach(p => {
+    p.hand = [];
+    for (let i = 0; i < 7; i++) {
+      p.hand.push(room.deck.pop());
     }
-
-    if (room.started) {
-      socket.emit("errorMessage", "Game already started.");
-      return;
-    }
-
-    if (room.players.length < 2) {
-      socket.emit("errorMessage", "Need at least 2 players to start.");
-      return;
-    }
-
-    room.deck = createDeck();
-    room.discardPile = [];
-    room.currentTurnIndex = 0;
-    room.direction = 1;
-
-    // clear hands & flags
-    room.players.forEach((p) => {
-      p.hand = [];
-      p.unoArmed = false;
-      p.team = null;
-    });
-
-    // assign teams if 4 or 8 players
-    assignTeams(room);
-
-    // deal
-    for (let i = 0; i < CARDS_PER_PLAYER; i++) {
-      room.players.forEach((p) => drawCard(room, p));
-    }
-
-    // flip starting top card (non-wild)
-    let firstCard;
-    do {
-      firstCard = room.deck.pop();
-    } while (
-      firstCard.type === TYPES.WILD ||
-      firstCard.type === TYPES.WILD_DRAW_FOUR
-    );
-    room.discardPile.push(firstCard);
-
-    room.started = true;
-    startTurnTimer(room);
-    broadcastGameState(room);
   });
 
-  // player pressed UNO button
-  socket.on("pressUno", () => {
-    const roomCode = socket.data.roomCode;
+  // Flip first non-wild top card
+  let first = room.deck.pop();
+  while (first.type === "WILD" || first.type === "WILD_DRAW_FOUR") {
+    room.deck.unshift(first);
+    first = room.deck.pop();
+  }
+
+  room.discardPile.push(first);
+  room.currentTurnIndex = 0;
+
+  startTurnTimer(roomCode);
+  broadcastState(roomCode);
+});
+
+
+  // ---------------------------
+  // DRAW CARD
+  // ---------------------------
+  socket.on("drawCard", () => {
+    const roomCode = findRoom(socket.id);
     if (!roomCode) return;
-    const room = getRoom(roomCode);
-    if (!room || !room.started) return;
 
-    const player = room.players.find((p) => p.id === socket.id);
-    if (!player) return;
+    const room = rooms.get(roomCode);
+    const idx = room.currentTurnIndex;
+    if (room.players[idx].id !== socket.id) return;
 
-    // only meaningful if it's their turn
-    const idx = room.players.findIndex((p) => p.id === socket.id);
-    if (idx !== room.currentTurnIndex) return;
+    if (room.deck.length === 0) reshuffle(room);
 
-    player.unoArmed = true;
-    socket.emit("errorMessage", "UNO armed! Play your second-last card.");
+    const card = room.deck.pop();
+    room.players[idx].hand.push(card);
+
+    // Auto play?
+    const top = room.discardPile[room.discardPile.length - 1];
+    if (canPlay(card, top)) {
+      if (card.type === "WILD" || card.type === "WILD_DRAW_FOUR") {
+        card.color = ["red","yellow","green","blue"][Math.floor(Math.random()*4)];
+      }
+      room.players[idx].hand.pop();
+      room.discardPile.push(card);
+      applyCardEffect(card, room);
+      advanceTurn(roomCode);
+    } else {
+      advanceTurn(roomCode);
+    }
   });
 
-  // NOTE: accepts chosenColor for wild cards
+  // ---------------------------
+  // PLAY CARD
+  // ---------------------------
   socket.on("playCard", ({ cardIndex, chosenColor }) => {
-    const roomCode = socket.data.roomCode;
+    const roomCode = findRoom(socket.id);
     if (!roomCode) return;
-    const room = getRoom(roomCode);
-    if (!room || !room.started) return;
 
-    const playerIndex = room.players.findIndex((p) => p.id === socket.id);
-    if (playerIndex === -1) return;
+    const room = rooms.get(roomCode);
+    const idx = room.currentTurnIndex;
+    if (room.players[idx].id !== socket.id) return;
 
-    if (playerIndex !== room.currentTurnIndex) {
-      socket.emit("errorMessage", "Not your turn.");
-      return;
-    }
-
-    const player = room.players[playerIndex];
-    if (
-      typeof cardIndex !== "number" ||
-      cardIndex < 0 ||
-      cardIndex >= player.hand.length
-    ) {
-      socket.emit("errorMessage", "Invalid card.");
-      return;
-    }
-
-    const topCard = getTopCard(room);
+    const player = room.players[idx];
     const card = player.hand[cardIndex];
 
-    if (!canPlay(card, topCard)) {
-      socket.emit("errorMessage", "You cannot play that card.");
+    const top = room.discardPile[room.discardPile.length - 1];
+    if (!canPlay(card, top)) return;
+
+    if ((card.type === "WILD" || card.type === "WILD_DRAW_FOUR") && !chosenColor)
       return;
-    }
 
-    const preCount = player.hand.length;
-    const needsUno = preCount === 2;
+    if (chosenColor) card.color = chosenColor;
 
-    // remove from hand and place on discard
-    player.hand.splice(cardIndex, 1);
     room.discardPile.push(card);
+    player.hand.splice(cardIndex, 1);
 
-    // UNO rule: if you had 2 cards and didn't press UNO -> draw 2 penalty
-    if (needsUno && !player.unoArmed) {
-      drawCard(room, player);
-      drawCard(room, player);
-      socket.emit(
-        "errorMessage",
-        "You forgot to press UNO! You drew 2 penalty cards."
-      );
-    }
-    // clear UNO flag after play
-    player.unoArmed = false;
+    applyCardEffect(card, room);
+    advanceTurn(roomCode);
 
-    // wild color chosen by player
-    if (card.type === TYPES.WILD || card.type === TYPES.WILD_DRAW_FOUR) {
-      let color = (chosenColor || "").toLowerCase();
-      if (!COLORS.includes(color)) {
-        color = COLORS[0];
-      }
-      card.color = color;
-    }
-
-    // Apply special effects
-    let extraSteps = 0;
-    if (card.type === TYPES.SKIP) {
-      extraSteps = 1;
-    } else if (card.type === TYPES.REVERSE) {
-      room.direction *= -1;
-    } else if (card.type === TYPES.DRAW_TWO) {
-      const nextIndex = getNextPlayerIndex(room);
-      const nextPlayer = room.players[nextIndex];
-      drawCard(room, nextPlayer);
-      drawCard(room, nextPlayer);
-      extraSteps = 1;
-    } else if (card.type === TYPES.WILD_DRAW_FOUR) {
-      const nextIndex = getNextPlayerIndex(room);
-      const nextPlayer = room.players[nextIndex];
-      for (let i = 0; i < 4; i++) {
-        drawCard(room, nextPlayer);
-      }
-      extraSteps = 1;
-    }
-
-    // win check (after possible UNO penalty)
-    if (player.hand.length === 0) {
-      const payload = {
-        winnerId: player.id,
-        winnerName: player.name,
-      };
-
-      // team win?
-      if (player.team !== null && player.team !== undefined) {
-        const teamPlayers = room.players.filter((p) => p.team === player.team);
-        if (teamPlayers.length > 1) {
-          payload.teamIndex = player.team;
-          payload.teammates = teamPlayers.map((p) => ({
-            id: p.id,
-            name: p.name,
-          }));
-        }
-      }
-
-      io.to(room.code).emit("gameOver", payload);
-      room.started = false;
-      clearTurnTimer(room.code);
-      broadcastGameState(room);
-      return;
-    }
-
-    // next player
-    goToNextPlayer(room, 1 + extraSteps);
-    startTurnTimer(room);
-    broadcastGameState(room);
+    if (player.hand.length >= 3)
+      player.pressedUno = false;
   });
 
-  socket.on("drawCard", () => {
-    const roomCode = socket.data.roomCode;
+  // ---------------------------
+  // UNO PRESS
+  // ---------------------------
+  socket.on("pressUno", () => {
+    const roomCode = findRoom(socket.id);
     if (!roomCode) return;
-    const room = getRoom(roomCode);
-    if (!room || !room.started) return;
 
-    const playerIndex = room.players.findIndex((p) => p.id === socket.id);
-    if (playerIndex === -1) return;
+    const room = rooms.get(roomCode);
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player) return;
 
-    if (playerIndex !== room.currentTurnIndex) {
-      socket.emit("errorMessage", "Not your turn.");
-      return;
-    }
-
-    const player = room.players[playerIndex];
-    const topBeforeDraw = getTopCard(room);
-
-    // draw ONE card
-    const drawn = drawCard(room, player);
-
-    if (!drawn) {
-      // no card to draw -> just pass
-      goToNextPlayer(room, 1);
-      startTurnTimer(room);
-      broadcastGameState(room);
-      return;
-    }
-
-    // if drawn card is playable on previous top card, auto-play it
-    if (canPlay(drawn, topBeforeDraw)) {
-      const idx = player.hand.findIndex((c) => c.id === drawn.id);
-      if (idx !== -1) {
-        player.hand.splice(idx, 1);
-      }
-      room.discardPile.push(drawn);
-
-      // if wild, choose color automatically based on hand
-      if (
-        drawn.type === TYPES.WILD ||
-        drawn.type === TYPES.WILD_DRAW_FOUR
-      ) {
-        const counts = { red: 0, yellow: 0, green: 0, blue: 0 };
-        player.hand.forEach((c) => {
-          if (COUNTS_HAS_COLOR(c.color)) counts[c.color]++;
-        });
-        let bestColor = "red";
-        let bestCount = -1;
-        for (const c of COLORS) {
-          if (counts[c] > bestCount) {
-            bestCount = counts[c];
-            bestColor = c;
-          }
-        }
-        drawn.color = bestColor;
-      }
-
-      // apply effects like in playCard
-      let extraSteps = 0;
-      if (drawn.type === TYPES.SKIP) {
-        extraSteps = 1;
-      } else if (drawn.type === TYPES.REVERSE) {
-        room.direction *= -1;
-      } else if (drawn.type === TYPES.DRAW_TWO) {
-        const nextIndex = getNextPlayerIndex(room);
-        const nextPlayer = room.players[nextIndex];
-        drawCard(room, nextPlayer);
-        drawCard(room, nextPlayer);
-        extraSteps = 1;
-      } else if (drawn.type === TYPES.WILD_DRAW_FOUR) {
-        const nextIndex = getNextPlayerIndex(room);
-        const nextPlayer = room.players[nextIndex];
-        for (let i = 0; i < 4; i++) {
-          drawCard(room, nextPlayer);
-        }
-        extraSteps = 1;
-      }
-
-      // win check for auto-play (no UNO requirement here)
-      if (player.hand.length === 0) {
-        const payload = {
-          winnerId: player.id,
-          winnerName: player.name,
-        };
-        if (player.team !== null && player.team !== undefined) {
-          const teamPlayers = room.players.filter(
-            (p) => p.team === player.team
-          );
-          if (teamPlayers.length > 1) {
-            payload.teamIndex = player.team;
-            payload.teammates = teamPlayers.map((p) => ({
-              id: p.id,
-              name: p.name,
-            }));
-          }
-        }
-        io.to(room.code).emit("gameOver", payload);
-        room.started = false;
-        clearTurnTimer(room.code);
-        broadcastGameState(room);
-        return;
-      }
-
-      goToNextPlayer(room, 1 + extraSteps);
-    } else {
-      // drawn card not playable: keep in hand, just pass turn
-      goToNextPlayer(room, 1);
-    }
-
-    startTurnTimer(room);
-    broadcastGameState(room);
+    player.pressedUno = true;
   });
 
+  // ---------------------------
+  // DISCONNECT
+  // ---------------------------
   socket.on("disconnect", () => {
-    console.log("Client disconnected:", socket.id);
-    removePlayerFromRoom(socket);
+    const roomCode = findRoom(socket.id);
+    if (!roomCode) return;
+
+    const room = rooms.get(roomCode);
+    room.players = room.players.filter(p => p.id !== socket.id);
+
+    if (room.players.length === 0) {
+      rooms.delete(roomCode);
+      return;
+    }
+
+    // If host left, next player becomes host
+    if (!room.players.some(p => p.isHost)) {
+      room.players[0].isHost = true;
+    }
+
+    broadcastState(roomCode);
   });
 });
 
+// ============================================================
+//  FIND ROOM BY SOCKET
+// ============================================================
+function findRoom(socketId) {
+  for (const [code, room] of rooms.entries()) {
+    if (room.players.some(p => p.id === socketId)) return code;
+  }
+  return null;
+}
+
+// ============================================================
+//  START SERVER
+// ============================================================
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log("Server listening on http://localhost:" + PORT);
-});
+server.listen(PORT, () =>
+  console.log(`Server running on http://localhost:${PORT}`)
+);
