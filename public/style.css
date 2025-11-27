@@ -537,6 +537,48 @@ button:disabled {
 .color-btn {
   min-width: 64px;
 }
+/* UNO button style */
+#uno-button {
+  background: #ff5252;
+  color: #fff;
+  font-weight: 700;
+}
+
+#uno-button.uno-active {
+  box-shadow: 0 0 12px rgba(255, 82, 82, 0.9);
+}
+
+/* teammate hands */
+
+#teammate-hands {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.teammate-hand-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.teammate-hand-label {
+  font-size: 13px;
+  opacity: 0.85;
+  min-width: 110px;
+}
+
+.teammate-hand-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.teammate-card {
+  width: 52px;
+  height: 78px;
+}
 
 /* ========= RESPONSIVE ========= */
 

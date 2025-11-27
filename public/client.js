@@ -19,8 +19,10 @@ const topCardDiv = document.getElementById("top-card");
 
 const startButton = document.getElementById("start-button");
 const drawButton = document.getElementById("draw-button");
+const unoButton = document.getElementById("uno-button");
 
 const handCardsDiv = document.getElementById("hand-cards");
+const teammateHandsDiv = document.getElementById("teammate-hands");
 
 const errorMessageDiv = document.getElementById("error-message");
 const infoMessageDiv = document.getElementById("info-message");
@@ -37,8 +39,10 @@ const seatBottom = document.getElementById("seat-bottom");
 let timerInterval = null;
 let pendingWildIndex = null;
 let pendingWildSourceEl = null;
+let unoArmedClient = false;
 
-// ===== helpers =====
+// ===== card helpers =====
+
 function getCardImagePath(card) {
   if (card.type === "NUMBER") {
     return `cards/${card.color}_${card.value}.png`;
@@ -58,9 +62,10 @@ function getCardImagePath(card) {
   if (card.type === "WILD_DRAW_FOUR") {
     return "cards/wild_draw4.png";
   }
-  return "cards/wild.png";
+  return "cards/wild.png"; // fallback
 }
 
+// same logic as server for client-side validation
 function canPlayClient(card, topCard) {
   if (!topCard) return true;
   if (card.type === "WILD" || card.type === "WILD_DRAW_FOUR") return true;
@@ -74,6 +79,39 @@ function canPlayClient(card, topCard) {
   if (card.type === topCard.type && card.type !== "NUMBER") return true;
   return false;
 }
+
+// sort by color then type/value (client side, for display)
+const COLOR_ORDER = { red: 0, yellow: 1, green: 2, blue: 3, wild: 4 };
+const TYPE_ORDER = {
+  NUMBER: 0,
+  SKIP: 1,
+  REVERSE: 2,
+  DRAW_TWO: 3,
+  WILD: 4,
+  WILD_DRAW_FOUR: 5,
+};
+
+function compareCardsClient(a, b) {
+  const ca = COLOR_ORDER[a.color] ?? 99;
+  const cb = COLOR_ORDER[b.color] ?? 99;
+  if (ca !== cb) return ca - cb;
+
+  if (a.type === "NUMBER" && b.type === "NUMBER") {
+    return (a.value ?? 0) - (b.value ?? 0);
+  }
+
+  const ta = TYPE_ORDER[a.type] ?? 99;
+  const tb = TYPE_ORDER[b.type] ?? 99;
+  return ta - tb;
+}
+
+function getTeamLabel(teamIndex) {
+  if (teamIndex === 0) return "Team 1";
+  if (teamIndex === 1) return "Team 2";
+  return null;
+}
+
+// ===== general helpers =====
 
 function setError(msg) {
   errorMessageDiv.textContent = msg || "";
@@ -95,7 +133,8 @@ function isHost() {
   return !!(me && me.isHost);
 }
 
-// ===== JOIN FLOW =====
+// ===== join flow =====
+
 joinButton.addEventListener("click", () => {
   const roomCode = roomCodeInput.value.trim().toUpperCase();
   const name = nameInput.value.trim();
@@ -108,7 +147,8 @@ joinButton.addEventListener("click", () => {
   socket.emit("joinRoom", { roomCode, playerName: name });
 });
 
-// ===== SOCKET EVENTS =====
+// ===== socket events =====
+
 socket.on("joinedRoom", ({ roomCode, playerId }) => {
   myPlayerId = playerId;
   setError("");
@@ -129,12 +169,25 @@ socket.on("errorMessage", (msg) => {
   setError(msg);
 });
 
-socket.on("gameOver", ({ winnerId, winnerName }) => {
-  if (winnerId === myPlayerId) {
-    setInfo("🎉 You win!");
+socket.on("gameOver", ({ winnerId, winnerName, teamIndex, teammates }) => {
+  if (typeof teamIndex === "number") {
+    const label = getTeamLabel(teamIndex) || "Team";
+    const names = (teammates || [])
+      .map((t) => (t.id === winnerId ? `${t.name} (winner)` : t.name))
+      .join(", ");
+    if (teammates && teammates.length > 1) {
+      setInfo(`🏆 ${label} wins! Players: ${names}`);
+    } else {
+      setInfo(`🏆 ${label} wins! Winner: ${winnerName}`);
+    }
   } else {
-    setInfo("🏆 " + winnerName + " wins!");
+    if (winnerId === myPlayerId) {
+      setInfo("🎉 You win!");
+    } else {
+      setInfo("🏆 " + winnerName + " wins!");
+    }
   }
+
   if (timerInterval) {
     clearInterval(timerInterval);
     timerInterval = null;
@@ -142,7 +195,8 @@ socket.on("gameOver", ({ winnerId, winnerName }) => {
   turnTimerDiv.textContent = "";
 });
 
-// ===== RENDERING =====
+// ===== rendering =====
+
 function renderRoom() {
   if (!currentRoom) return;
 
@@ -164,6 +218,13 @@ function renderRoom() {
       hostTag.textContent = "HOST";
       hostTag.className = "player-host-tag";
       leftSpan.appendChild(hostTag);
+    }
+
+    if (typeof p.team === "number") {
+      const teamTag = document.createElement("span");
+      teamTag.textContent = getTeamLabel(p.team);
+      teamTag.className = "player-team-tag";
+      leftSpan.appendChild(teamTag);
     }
 
     rightSpan.textContent = `Cards: ${p.hand.length}`;
@@ -199,8 +260,9 @@ function renderRoom() {
     topCardDiv.textContent = "";
   }
 
-  // hand
+  // hand & teammate hands
   renderHand(topCard);
+  renderTeammateHands();
 
   const myTurn = isMyTurn();
   const me = currentRoom.players.find((p) => p.id === myPlayerId);
@@ -227,9 +289,21 @@ function renderRoom() {
   startButton.disabled = !isHost() || currentRoom.started;
   drawButton.disabled = !myTurn;
 
+  // UNO button state
+  if (unoButton) {
+    const canPressUno =
+      currentRoom.started && myTurn && me && me.hand.length === 2;
+    if (!canPressUno) {
+      unoArmedClient = false;
+    }
+    unoButton.disabled = !canPressUno;
+    unoButton.classList.toggle("uno-active", canPressUno && unoArmedClient);
+  }
+
   setupTimer();
 }
 
+// seats: you = bottom, then others: top, right, left
 function renderSeats() {
   if (!currentRoom || !currentRoom.players) {
     seatTop.innerHTML = "";
@@ -255,7 +329,8 @@ function renderSeats() {
     }
   }
 
-  const slots = [seatBottom, seatRight, seatTop, seatLeft];
+  // order of seats: bottom (you), top, right, left
+  const slots = [seatBottom, seatTop, seatRight, seatLeft];
   slots.forEach((seat) => (seat.innerHTML = ""));
 
   ordered.forEach((entry, i) => {
@@ -272,7 +347,13 @@ function renderSeats() {
 
     const nameDiv = document.createElement("div");
     nameDiv.className = "seat-name";
-    nameDiv.textContent = player.name + (isMe ? " (You)" : "");
+
+    let label = player.name;
+    if (isMe) label += " (You)";
+    if (typeof player.team === "number") {
+      label += " · " + getTeamLabel(player.team);
+    }
+    nameDiv.textContent = label;
 
     const cardsDiv = document.createElement("div");
     cardsDiv.className = "seat-cards";
@@ -283,7 +364,7 @@ function renderSeats() {
     const stackDiv = document.createElement("div");
     stackDiv.className = "seat-card-stack";
     const backsToShow = Math.min(3, player.hand.length);
-    for (let i = 0; i < backsToShow; i++) {
+    for (let i2 = 0; i2 < backsToShow; i2++) {
       const back = document.createElement("div");
       back.className = "seat-card-back";
       stackDiv.appendChild(back);
@@ -304,7 +385,12 @@ function renderHand(topCard) {
   const me = currentRoom.players.find((p) => p.id === myPlayerId);
   if (!me) return;
 
-  me.hand.forEach((card, index) => {
+  // sort by color/number for display, but remember original index
+  const sorted = me.hand
+    .map((card, idx) => ({ card, idx }))
+    .sort((a, b) => compareCardsClient(a.card, b.card));
+
+  sorted.forEach(({ card, idx }) => {
     const btn = document.createElement("button");
     btn.className = "card hand-card";
 
@@ -323,12 +409,12 @@ function renderHand(topCard) {
       setError("");
 
       if (card.type === "WILD" || card.type === "WILD_DRAW_FOUR") {
-        pendingWildIndex = index;
+        pendingWildIndex = idx; // original index in hand
         pendingWildSourceEl = btn;
         openColorPicker();
       } else {
         animateCardToCenter(btn);
-        socket.emit("playCard", { cardIndex: index });
+        socket.emit("playCard", { cardIndex: idx });
       }
     });
 
@@ -336,7 +422,47 @@ function renderHand(topCard) {
   });
 }
 
-// ===== COLOR PICKER =====
+function renderTeammateHands() {
+  if (!teammateHandsDiv) return;
+  teammateHandsDiv.innerHTML = "";
+  if (!currentRoom || !currentRoom.players) return;
+
+  const me = currentRoom.players.find((p) => p.id === myPlayerId);
+  if (!me || typeof me.team !== "number") return;
+
+  const teammates = currentRoom.players.filter(
+    (p) => p.id !== myPlayerId && p.team === me.team
+  );
+  if (!teammates.length) return;
+
+  teammates.forEach((p) => {
+    const row = document.createElement("div");
+    row.className = "teammate-hand-row";
+
+    const label = document.createElement("div");
+    label.className = "teammate-hand-label";
+    label.textContent = `${p.name}'s cards`;
+    row.appendChild(label);
+
+    const cardsDiv = document.createElement("div");
+    cardsDiv.className = "teammate-hand-cards";
+
+    const sorted = p.hand.slice().sort(compareCardsClient);
+    sorted.forEach((card) => {
+      const el = document.createElement("div");
+      el.className = "card teammate-card";
+      const imgPath = getCardImagePath(card);
+      el.innerHTML = `<img src="${imgPath}" alt="" class="card-img" />`;
+      cardsDiv.appendChild(el);
+    });
+
+    row.appendChild(cardsDiv);
+    teammateHandsDiv.appendChild(row);
+  });
+}
+
+// ===== color picker for wilds =====
+
 function openColorPicker() {
   if (!colorOverlay) return;
   colorOverlay.classList.remove("hidden");
@@ -359,13 +485,34 @@ colorButtons.forEach((btn) => {
     animateCardToCenter(pendingWildSourceEl);
     socket.emit("playCard", {
       cardIndex: pendingWildIndex,
-      chosenColor
+      chosenColor,
     });
     closeColorPicker();
   });
 });
 
-// ===== CARD DROP ANIMATION =====
+// ===== UNO button =====
+
+if (unoButton) {
+  unoButton.addEventListener("click", () => {
+    if (!currentRoom) return;
+    if (!isMyTurn()) {
+      setError("It's not your turn.");
+      return;
+    }
+    const me = currentRoom.players.find((p) => p.id === myPlayerId);
+    if (!me || me.hand.length !== 2) {
+      setError("You can only press UNO when you have 2 cards.");
+      return;
+    }
+    socket.emit("pressUno");
+    unoArmedClient = true;
+    setInfo("UNO! Now play your second-last card.");
+  });
+}
+
+// ===== card drop animation =====
+
 function animateCardToCenter(sourceEl) {
   if (!topCardDiv) return;
 
@@ -405,7 +552,8 @@ function animateCardToCenter(sourceEl) {
   );
 }
 
-// ===== TIMER UI =====
+// ===== timer UI =====
+
 function setupTimer() {
   if (timerInterval) {
     clearInterval(timerInterval);
@@ -433,7 +581,8 @@ function setupTimer() {
   timerInterval = setInterval(update, 300);
 }
 
-// ===== BUTTON ACTIONS =====
+// ===== buttons =====
+
 startButton.addEventListener("click", () => {
   if (!isHost()) {
     setError("Only the host can start.");

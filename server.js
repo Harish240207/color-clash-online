@@ -1,510 +1,528 @@
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
+const socket = io();
 
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
+let myPlayerId = null;
+let currentRoom = null;
 
-app.use(express.static("public"));
+const joinScreen = document.getElementById("join-screen");
+const gameScreen = document.getElementById("game-screen");
 
-// ===== GAME CONSTANTS =====
-const COLORS = ["red", "blue", "green", "yellow"];
-const TYPES = {
-  NUMBER: "NUMBER",
-  SKIP: "SKIP",
-  REVERSE: "REVERSE",
-  DRAW_TWO: "DRAW_TWO",
-  WILD: "WILD",
-  WILD_DRAW_FOUR: "WILD_DRAW_FOUR"
-};
+const roomCodeInput = document.getElementById("room-code-input");
+const nameInput = document.getElementById("name-input");
+const joinButton = document.getElementById("join-button");
+const joinError = document.getElementById("join-error");
 
-const MAX_PLAYERS_PER_ROOM = 10;
-const CARDS_PER_PLAYER = 7;
-const TURN_MS = 15_000; // 15 seconds per turn
+const roomInfo = document.getElementById("room-info");
+const playersList = document.getElementById("players-list");
+const statusText = document.getElementById("status-text");
+const turnTimerDiv = document.getElementById("turn-timer");
+const topCardDiv = document.getElementById("top-card");
 
-// rooms: Map<roomCode, roomObject>
-const rooms = new Map();
-// timers: roomCode -> { timeoutId, deadline }
-const roomTimers = new Map();
+const startButton = document.getElementById("start-button");
+const drawButton = document.getElementById("draw-button");
 
-// ===== UTILS =====
-function createDeck() {
-  const d = [];
+const handCardsDiv = document.getElementById("hand-cards");
 
-  COLORS.forEach((color) => {
-    d.push(createCard(color, TYPES.NUMBER, 0));
-    for (let n = 1; n <= 9; n++) {
-      d.push(createCard(color, TYPES.NUMBER, n));
-      d.push(createCard(color, TYPES.NUMBER, n));
-    }
-    for (let i = 0; i < 2; i++) {
-      d.push(createCard(color, TYPES.SKIP));
-      d.push(createCard(color, TYPES.REVERSE));
-      d.push(createCard(color, TYPES.DRAW_TWO));
-    }
-  });
+const errorMessageDiv = document.getElementById("error-message");
+const infoMessageDiv = document.getElementById("info-message");
 
-  for (let i = 0; i < 4; i++) {
-    d.push(createCard("wild", TYPES.WILD));
-    d.push(createCard("wild", TYPES.WILD_DRAW_FOUR));
+const colorOverlay = document.getElementById("color-picker-overlay");
+const colorButtons = document.querySelectorAll("#color-picker-overlay .color-btn");
+
+// table seats
+const seatTop = document.getElementById("seat-top");
+const seatLeft = document.getElementById("seat-left");
+const seatRight = document.getElementById("seat-right");
+const seatBottom = document.getElementById("seat-bottom");
+
+let timerInterval = null;
+let pendingWildIndex = null;
+let pendingWildSourceEl = null;
+
+// ===== card helpers =====
+
+function getCardImagePath(card) {
+  if (card.type === "NUMBER") {
+    return `cards/${card.color}_${card.value}.png`;
   }
-
-  return shuffle(d);
-}
-
-function createCard(color, type, value = null) {
-  return {
-    id: Math.random().toString(36).slice(2),
-    color,
-    type,
-    value
-  };
-}
-
-function shuffle(array) {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
+  if (card.type === "SKIP") {
+    return `cards/${card.color}_skip.png`;
   }
-  return array;
-}
-
-function getRoom(roomCode) {
-  return rooms.get(roomCode);
-}
-
-function createRoom(roomCode) {
-  const room = {
-    code: roomCode,
-    players: [],
-    deck: [],
-    discardPile: [],
-    currentTurnIndex: 0,
-    direction: 1,
-    started: false
-  };
-  rooms.set(roomCode, room);
-  return room;
-}
-
-function drawCard(room, player) {
-  if (room.deck.length === 0) {
-    if (room.discardPile.length > 1) {
-      const top = room.discardPile.pop();
-      room.deck = shuffle(room.discardPile);
-      room.discardPile = [top];
-    }
+  if (card.type === "REVERSE") {
+    return `cards/${card.color}_reverse.png`;
   }
-  if (room.deck.length === 0) {
-    return null;
+  if (card.type === "DRAW_TWO") {
+    return `cards/${card.color}_draw2.png`;
   }
-  const card = room.deck.pop();
-  player.hand.push(card);
-  return card;
+  if (card.type === "WILD") {
+    return "cards/wild.png";
+  }
+  if (card.type === "WILD_DRAW_FOUR") {
+    return "cards/wild_draw4.png";
+  }
+  return "cards/wild.png"; // fallback
 }
 
-function getTopCard(room) {
-  return room.discardPile[room.discardPile.length - 1];
-}
-
-function canPlay(card, topCard) {
+// same logic as server for client-side validation
+function canPlayClient(card, topCard) {
   if (!topCard) return true;
-
-  if (card.type === TYPES.WILD || card.type === TYPES.WILD_DRAW_FOUR) {
-    return true;
-  }
-
+  if (card.type === "WILD" || card.type === "WILD_DRAW_FOUR") return true;
   if (card.color === topCard.color) return true;
-
   if (
-    card.type === TYPES.NUMBER &&
-    topCard.type === TYPES.NUMBER &&
+    card.type === "NUMBER" &&
+    topCard.type === "NUMBER" &&
     card.value === topCard.value
-  ) {
+  )
     return true;
-  }
-
-  if (card.type === topCard.type && card.type !== TYPES.NUMBER) {
-    return true;
-  }
-
+  if (card.type === topCard.type && card.type !== "NUMBER") return true;
   return false;
 }
 
-function getNextPlayerIndex(room, steps = 1) {
-  const num = room.players.length;
-  if (num === 0) return 0;
-  return (room.currentTurnIndex + room.direction * steps + num) % num;
-}
+// sort by color then type/value (client side, for display)
+const COLOR_ORDER = { red: 0, yellow: 1, green: 2, blue: 3, wild: 4 };
+const TYPE_ORDER = {
+  NUMBER: 0,
+  SKIP: 1,
+  REVERSE: 2,
+  DRAW_TWO: 3,
+  WILD: 4,
+  WILD_DRAW_FOUR: 5,
+};
 
-function goToNextPlayer(room, steps = 1) {
-  room.currentTurnIndex = getNextPlayerIndex(room, steps);
-}
+function compareCardsClient(a, b) {
+  const ca = COLOR_ORDER[a.color] ?? 99;
+  const cb = COLOR_ORDER[b.color] ?? 99;
+  if (ca !== cb) return ca - cb;
 
-// ===== TURN TIMER =====
-function clearTurnTimer(roomCode) {
-  const data = roomTimers.get(roomCode);
-  if (data && data.timeoutId) clearTimeout(data.timeoutId);
-  roomTimers.delete(roomCode);
-}
-
-function startTurnTimer(room) {
-  const code = room.code;
-  clearTurnTimer(code);
-
-  const deadline = Date.now() + TURN_MS;
-
-  const timeoutId = setTimeout(() => {
-    const r = getRoom(code);
-    if (!r || !r.started || r.players.length === 0) return;
-
-    const player = r.players[r.currentTurnIndex];
-    if (!player) return;
-
-    // timeout: auto-draw 1 card and pass turn
-    drawCard(r, player);
-    goToNextPlayer(r, 1);
-    startTurnTimer(r);
-    broadcastGameState(r);
-  }, TURN_MS);
-
-  roomTimers.set(code, { timeoutId, deadline });
-}
-
-function getTurnDeadline(roomCode) {
-  const data = roomTimers.get(roomCode);
-  return data ? data.deadline : null;
-}
-
-// ===== BROADCAST =====
-function broadcastGameState(room) {
-  const deadline = getTurnDeadline(room.code);
-  const publicState = {
-    ...room,
-    turnDeadline: deadline
-  };
-  io.to(room.code).emit("gameState", publicState);
-}
-
-function removePlayerFromRoom(socket) {
-  const roomCode = socket.data.roomCode;
-  if (!roomCode) return;
-  const room = getRoom(roomCode);
-  if (!room) return;
-
-  const index = room.players.findIndex((p) => p.id === socket.id);
-  if (index === -1) return;
-
-  room.players.splice(index, 1);
-
-  if (room.currentTurnIndex >= room.players.length) {
-    room.currentTurnIndex = 0;
+  if (a.type === "NUMBER" && b.type === "NUMBER") {
+    return (a.value ?? 0) - (b.value ?? 0);
   }
 
-  if (room.players.length === 0) {
-    clearTurnTimer(roomCode);
-    rooms.delete(roomCode);
+  const ta = TYPE_ORDER[a.type] ?? 99;
+  const tb = TYPE_ORDER[b.type] ?? 99;
+  return ta - tb;
+}
+
+function getTeamLabel(teamIndex) {
+  if (teamIndex === 0) return "Team 1";
+  if (teamIndex === 1) return "Team 2";
+  return null;
+}
+
+// ===== general helpers =====
+
+function setError(msg) {
+  errorMessageDiv.textContent = msg || "";
+}
+
+function setInfo(msg) {
+  infoMessageDiv.textContent = msg || "";
+}
+
+function isMyTurn() {
+  if (!currentRoom || !currentRoom.players) return false;
+  const idx = currentRoom.players.findIndex((p) => p.id === myPlayerId);
+  return idx !== -1 && idx === currentRoom.currentTurnIndex && currentRoom.started;
+}
+
+function isHost() {
+  if (!currentRoom || !currentRoom.players) return false;
+  const me = currentRoom.players.find((p) => p.id === myPlayerId);
+  return !!(me && me.isHost);
+}
+
+// ===== join flow =====
+
+joinButton.addEventListener("click", () => {
+  const roomCode = roomCodeInput.value.trim().toUpperCase();
+  const name = nameInput.value.trim();
+
+  if (!roomCode || !name) {
+    joinError.textContent = "Enter room code and name.";
+    return;
+  }
+  joinError.textContent = "";
+  socket.emit("joinRoom", { roomCode, playerName: name });
+});
+
+// ===== socket events =====
+
+socket.on("joinedRoom", ({ roomCode, playerId }) => {
+  myPlayerId = playerId;
+  setError("");
+  setInfo("");
+
+  joinScreen.classList.add("hidden");
+  gameScreen.classList.remove("hidden");
+
+  roomInfo.textContent = "Room: " + roomCode;
+});
+
+socket.on("gameState", (room) => {
+  currentRoom = room;
+  renderRoom();
+});
+
+socket.on("errorMessage", (msg) => {
+  setError(msg);
+});
+
+socket.on("gameOver", ({ winnerId, winnerName, teamIndex, teammates }) => {
+  if (typeof teamIndex === "number") {
+    const label = getTeamLabel(teamIndex) || "Team";
+    const names = (teammates || [])
+      .map((t) => (t.id === winnerId ? `${t.name} (winner)` : t.name))
+      .join(", ");
+    if (teammates && teammates.length > 1) {
+      setInfo(`🏆 ${label} wins! Players: ${names}`);
+    } else {
+      setInfo(`🏆 ${label} wins! Winner: ${winnerName}`);
+    }
   } else {
-    if (!room.players.some((p) => p.isHost)) {
-      room.players[0].isHost = true;
+    if (winnerId === myPlayerId) {
+      setInfo("🎉 You win!");
+    } else {
+      setInfo("🏆 " + winnerName + " wins!");
     }
-    broadcastGameState(room);
   }
+
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  turnTimerDiv.textContent = "";
+});
+
+// ===== rendering =====
+
+function renderRoom() {
+  if (!currentRoom) return;
+
+  // players list on left
+  playersList.innerHTML = "";
+  currentRoom.players.forEach((p, index) => {
+    const li = document.createElement("li");
+    const leftSpan = document.createElement("span");
+    const rightSpan = document.createElement("span");
+
+    leftSpan.textContent = p.name;
+    if (p.id === myPlayerId) {
+      leftSpan.textContent += " (You)";
+      li.classList.add("player-me");
+    }
+
+    if (p.isHost) {
+      const hostTag = document.createElement("span");
+      hostTag.textContent = "HOST";
+      hostTag.className = "player-host-tag";
+      leftSpan.appendChild(hostTag);
+    }
+
+    if (typeof p.team === "number") {
+      const teamTag = document.createElement("span");
+      teamTag.textContent = getTeamLabel(p.team);
+      teamTag.className = "player-team-tag";
+      leftSpan.appendChild(teamTag);
+    }
+
+    rightSpan.textContent = `Cards: ${p.hand.length}`;
+
+    if (index === currentRoom.currentTurnIndex && currentRoom.started) {
+      li.classList.add("player-turn");
+    }
+
+    li.appendChild(leftSpan);
+    li.appendChild(rightSpan);
+    playersList.appendChild(li);
+  });
+
+  // table seats
+  renderSeats();
+
+  // top card
+  const topCard =
+    currentRoom.discardPile && currentRoom.discardPile.length
+      ? currentRoom.discardPile[currentRoom.discardPile.length - 1]
+      : null;
+
+  if (topCard) {
+    topCardDiv.className = "card big-card";
+    const imgPath = getCardImagePath(topCard);
+    topCardDiv.innerHTML = `<img src="${imgPath}" alt="" class="card-img" />`;
+
+    topCardDiv.classList.remove("top-card-pop");
+    void topCardDiv.offsetWidth;
+    topCardDiv.classList.add("top-card-pop");
+  } else {
+    topCardDiv.className = "card big-card";
+    topCardDiv.textContent = "";
+  }
+
+  // hand
+  renderHand(topCard);
+
+  const myTurn = isMyTurn();
+  const me = currentRoom.players.find((p) => p.id === myPlayerId);
+  let canPlayAny = false;
+  if (me && topCard) {
+    canPlayAny = me.hand.some((c) => canPlayClient(c, topCard));
+  }
+
+  if (!currentRoom.started) {
+    statusText.textContent =
+      "Waiting for host to start. Players: " + currentRoom.players.length;
+  } else if (myTurn) {
+    if (canPlayAny) {
+      statusText.textContent = "Your turn: tap a card to play, or draw 1 card.";
+    } else {
+      statusText.textContent = "You have no playable card. Draw 1 card.";
+    }
+  } else {
+    const player = currentRoom.players[currentRoom.currentTurnIndex];
+    statusText.textContent =
+      "Waiting for " + (player ? player.name : "player") + "...";
+  }
+
+  startButton.disabled = !isHost() || currentRoom.started;
+  drawButton.disabled = !myTurn;
+
+  setupTimer();
 }
 
-// ===== SOCKET.IO LOGIC =====
-io.on("connection", (socket) => {
-  console.log("New client connected:", socket.id);
+// seats: you = bottom, then others: top, right, left
+function renderSeats() {
+  if (!currentRoom || !currentRoom.players) {
+    seatTop.innerHTML = "";
+    seatLeft.innerHTML = "";
+    seatRight.innerHTML = "";
+    seatBottom.innerHTML = "";
+    return;
+  }
 
-  socket.on("joinRoom", ({ roomCode, playerName }) => {
-    roomCode = (roomCode || "").trim().toUpperCase();
-    if (!roomCode || !playerName) {
-      socket.emit("errorMessage", "Room code and name are required.");
-      return;
+  const players = currentRoom.players;
+  const myIndex = players.findIndex((p) => p.id === myPlayerId);
+
+  const ordered = [];
+  if (myIndex === -1) {
+    for (let i = 0; i < players.length && ordered.length < 4; i++) {
+      ordered.push({ player: players[i], index: i });
+    }
+  } else {
+    ordered.push({ player: players[myIndex], index: myIndex });
+    for (let step = 1; step < players.length && ordered.length < 4; step++) {
+      const idx = (myIndex + step) % players.length;
+      ordered.push({ player: players[idx], index: idx });
+    }
+  }
+
+  // order of seats: bottom (you), top, right, left
+  const slots = [seatBottom, seatTop, seatRight, seatLeft];
+  slots.forEach((seat) => (seat.innerHTML = ""));
+
+  ordered.forEach((entry, i) => {
+    const seat = slots[i];
+    if (!seat) return;
+
+    const { player, index } = entry;
+    const isMe = player.id === myPlayerId;
+    const isTurn = index === currentRoom.currentTurnIndex && currentRoom.started;
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "seat-wrapper" + (isTurn ? " seat-turn" : "");
+    if (isMe) wrapper.classList.add("seat-me");
+
+    const nameDiv = document.createElement("div");
+    nameDiv.className = "seat-name";
+
+    let label = player.name;
+    if (isMe) label += " (You)";
+    if (typeof player.team === "number") {
+      label += " · " + getTeamLabel(player.team);
+    }
+    nameDiv.textContent = label;
+
+    const cardsDiv = document.createElement("div");
+    cardsDiv.className = "seat-cards";
+    const countDiv = document.createElement("div");
+    countDiv.className = "seat-card-count";
+    countDiv.textContent = player.hand.length;
+
+    const stackDiv = document.createElement("div");
+    stackDiv.className = "seat-card-stack";
+    const backsToShow = Math.min(3, player.hand.length);
+    for (let i2 = 0; i2 < backsToShow; i2++) {
+      const back = document.createElement("div");
+      back.className = "seat-card-back";
+      stackDiv.appendChild(back);
     }
 
-    let room = getRoom(roomCode);
-    if (!room) {
-      room = createRoom(roomCode);
-    }
+    cardsDiv.appendChild(stackDiv);
+    cardsDiv.appendChild(countDiv);
+    wrapper.appendChild(nameDiv);
+    wrapper.appendChild(cardsDiv);
 
-    if (room.started) {
-      socket.emit("errorMessage", "Game already started in this room.");
-      return;
-    }
-
-    if (room.players.length >= MAX_PLAYERS_PER_ROOM) {
-      socket.emit(
-        "errorMessage",
-        "Room is full. Max players: " + MAX_PLAYERS_PER_ROOM
-      );
-      return;
-    }
-
-    const newPlayer = {
-      id: socket.id,
-      name: playerName,
-      hand: [],
-      isHost: room.players.length === 0
-    };
-
-    room.players.push(newPlayer);
-
-    socket.join(roomCode);
-    socket.data.roomCode = roomCode;
-
-    socket.emit("joinedRoom", {
-      roomCode,
-      playerId: socket.id
-    });
-
-    broadcastGameState(room);
+    seat.appendChild(wrapper);
   });
+}
 
-  socket.on("startGame", () => {
-    const roomCode = socket.data.roomCode;
-    if (!roomCode) return;
-    const room = getRoom(roomCode);
-    if (!room) return;
+function renderHand(topCard) {
+  handCardsDiv.innerHTML = "";
+  if (!currentRoom) return;
+  const me = currentRoom.players.find((p) => p.id === myPlayerId);
+  if (!me) return;
 
-    const player = room.players.find((p) => p.id === socket.id);
-    if (!player || !player.isHost) {
-      socket.emit("errorMessage", "Only the host can start the game.");
-      return;
-    }
+  // sort by color/number for display, but remember original index
+  const sorted = me.hand
+    .map((card, idx) => ({ card, idx }))
+    .sort((a, b) => compareCardsClient(a.card, b.card));
 
-    if (room.started) {
-      socket.emit("errorMessage", "Game already started.");
-      return;
-    }
+  sorted.forEach(({ card, idx }) => {
+    const btn = document.createElement("button");
+    btn.className = "card hand-card";
 
-    if (room.players.length < 2) {
-      socket.emit("errorMessage", "Need at least 2 players to start.");
-      return;
-    }
+    const imgPath = getCardImagePath(card);
+    btn.innerHTML = `<img src="${imgPath}" alt="" class="card-img" />`;
 
-    room.deck = createDeck();
-    room.discardPile = [];
-    room.currentTurnIndex = 0;
-    room.direction = 1;
-
-    room.players.forEach((p) => {
-      p.hand = [];
-    });
-
-    for (let i = 0; i < CARDS_PER_PLAYER; i++) {
-      room.players.forEach((p) => drawCard(room, p));
-    }
-
-    let firstCard;
-    do {
-      firstCard = room.deck.pop();
-    } while (
-      firstCard.type === TYPES.WILD ||
-      firstCard.type === TYPES.WILD_DRAW_FOUR
-    );
-    room.discardPile.push(firstCard);
-
-    room.started = true;
-    startTurnTimer(room);
-    broadcastGameState(room);
-  });
-
-  // NOTE: now accepts chosenColor for wild cards
-  socket.on("playCard", ({ cardIndex, chosenColor }) => {
-    const roomCode = socket.data.roomCode;
-    if (!roomCode) return;
-    const room = getRoom(roomCode);
-    if (!room || !room.started) return;
-
-    const playerIndex = room.players.findIndex((p) => p.id === socket.id);
-    if (playerIndex === -1) return;
-
-    if (playerIndex !== room.currentTurnIndex) {
-      socket.emit("errorMessage", "Not your turn.");
-      return;
-    }
-
-    const player = room.players[playerIndex];
-    if (
-      typeof cardIndex !== "number" ||
-      cardIndex < 0 ||
-      cardIndex >= player.hand.length
-    ) {
-      socket.emit("errorMessage", "Invalid card.");
-      return;
-    }
-
-    const card = player.hand[cardIndex];
-    const topCard = getTopCard(room);
-
-    if (!canPlay(card, topCard)) {
-      socket.emit("errorMessage", "You cannot play that card.");
-      return;
-    }
-
-    // remove from hand
-    player.hand.splice(cardIndex, 1);
-    room.discardPile.push(card);
-
-    // wild color chosen by player
-    if (card.type === TYPES.WILD || card.type === TYPES.WILD_DRAW_FOUR) {
-      let color = (chosenColor || "").toLowerCase();
-      if (!COLORS.includes(color)) {
-        // fallback (shouldn't happen if client is correct)
-        color = COLORS[0];
-      }
-      card.color = color;
-    }
-
-    // Apply effects
-    let extraSteps = 0;
-    if (card.type === TYPES.SKIP) {
-      extraSteps = 1;
-    } else if (card.type === TYPES.REVERSE) {
-      room.direction *= -1;
-    } else if (card.type === TYPES.DRAW_TWO) {
-      const nextIndex = getNextPlayerIndex(room);
-      const nextPlayer = room.players[nextIndex];
-      drawCard(room, nextPlayer);
-      drawCard(room, nextPlayer);
-      extraSteps = 1;
-    } else if (card.type === TYPES.WILD_DRAW_FOUR) {
-      const nextIndex = getNextPlayerIndex(room);
-      const nextPlayer = room.players[nextIndex];
-      for (let i = 0; i < 4; i++) {
-        drawCard(room, nextPlayer);
-      }
-      extraSteps = 1;
-    }
-
-    // win check
-    if (player.hand.length === 0) {
-      io.to(room.code).emit("gameOver", {
-        winnerId: player.id,
-        winnerName: player.name
-      });
-      room.started = false;
-      clearTurnTimer(room.code);
-      broadcastGameState(room);
-      return;
-    }
-
-    // next player
-    goToNextPlayer(room, 1 + extraSteps);
-    startTurnTimer(room);
-    broadcastGameState(room);
-  });
-
-  socket.on("drawCard", () => {
-    const roomCode = socket.data.roomCode;
-    if (!roomCode) return;
-    const room = getRoom(roomCode);
-    if (!room || !room.started) return;
-
-    const playerIndex = room.players.findIndex((p) => p.id === socket.id);
-    if (playerIndex === -1) return;
-
-    if (playerIndex !== room.currentTurnIndex) {
-      socket.emit("errorMessage", "Not your turn.");
-      return;
-    }
-
-    const player = room.players[playerIndex];
-    const topBeforeDraw = getTopCard(room);
-
-    // draw ONE card
-    const drawn = drawCard(room, player);
-
-    if (!drawn) {
-      // no card to draw -> just pass
-      goToNextPlayer(room, 1);
-      startTurnTimer(room);
-      broadcastGameState(room);
-      return;
-    }
-
-    // if drawn card is playable on previous top card, auto-play it
-    if (canPlay(drawn, topBeforeDraw)) {
-      // remove drawn from hand (it should be last)
-      const idx = player.hand.findIndex((c) => c.id === drawn.id);
-      if (idx !== -1) {
-        player.hand.splice(idx, 1);
-      }
-      room.discardPile.push(drawn);
-
-      // if wild, choose color automatically (no time for popup here)
-      if (
-        drawn.type === TYPES.WILD ||
-        drawn.type === TYPES.WILD_DRAW_FOUR
-      ) {
-        const counts = { red: 0, blue: 0, green: 0, yellow: 0 };
-        player.hand.forEach((c) => {
-          if (COLORS.includes(c.color)) counts[c.color]++;
-        });
-        let bestColor = "red";
-        let bestCount = -1;
-        for (const c of COLORS) {
-          if (counts[c] > bestCount) {
-            bestCount = counts[c];
-            bestColor = c;
-          }
-        }
-        drawn.color = bestColor;
-      }
-
-      // apply effects like in playCard
-      let extraSteps = 0;
-      if (drawn.type === TYPES.SKIP) {
-        extraSteps = 1;
-      } else if (drawn.type === TYPES.REVERSE) {
-        room.direction *= -1;
-      } else if (drawn.type === TYPES.DRAW_TWO) {
-        const nextIndex = getNextPlayerIndex(room);
-        const nextPlayer = room.players[nextIndex];
-        drawCard(room, nextPlayer);
-        drawCard(room, nextPlayer);
-        extraSteps = 1;
-      } else if (drawn.type === TYPES.WILD_DRAW_FOUR) {
-        const nextIndex = getNextPlayerIndex(room);
-        const nextPlayer = room.players[nextIndex];
-        for (let i = 0; i < 4; i++) {
-          drawCard(room, nextPlayer);
-        }
-        extraSteps = 1;
-      }
-
-      // win check
-      if (player.hand.length === 0) {
-        io.to(room.code).emit("gameOver", {
-          winnerId: player.id,
-          winnerName: player.name
-        });
-        room.started = false;
-        clearTurnTimer(room.code);
-        broadcastGameState(room);
+    btn.addEventListener("click", () => {
+      if (!isMyTurn()) {
+        setError("It's not your turn.");
         return;
       }
+      if (!canPlayClient(card, topCard)) {
+        setError("You can't play that card.");
+        return;
+      }
+      setError("");
 
-      // go to next player after auto-play
-      goToNextPlayer(room, 1 + extraSteps);
-    } else {
-      // drawn card not playable: keep in hand, just pass turn
-      goToNextPlayer(room, 1);
-    }
+      if (card.type === "WILD" || card.type === "WILD_DRAW_FOUR") {
+        pendingWildIndex = idx; // original index in hand
+        pendingWildSourceEl = btn;
+        openColorPicker();
+      } else {
+        animateCardToCenter(btn);
+        socket.emit("playCard", { cardIndex: idx });
+      }
+    });
 
-    startTurnTimer(room);
-    broadcastGameState(room);
+    handCardsDiv.appendChild(btn);
   });
+}
 
-  socket.on("disconnect", () => {
-    console.log("Client disconnected:", socket.id);
-    removePlayerFromRoom(socket);
+// ===== color picker for wilds =====
+
+function openColorPicker() {
+  if (!colorOverlay) return;
+  colorOverlay.classList.remove("hidden");
+}
+
+function closeColorPicker() {
+  if (!colorOverlay) return;
+  colorOverlay.classList.add("hidden");
+  pendingWildIndex = null;
+  pendingWildSourceEl = null;
+}
+
+colorButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const chosenColor = btn.dataset.color;
+    if (pendingWildIndex == null || !pendingWildSourceEl) {
+      closeColorPicker();
+      return;
+    }
+    animateCardToCenter(pendingWildSourceEl);
+    socket.emit("playCard", {
+      cardIndex: pendingWildIndex,
+      chosenColor,
+    });
+    closeColorPicker();
   });
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log("Server listening on http://localhost:" + PORT);
+// ===== card drop animation =====
+
+function animateCardToCenter(sourceEl) {
+  if (!topCardDiv) return;
+
+  const srcRect = sourceEl.getBoundingClientRect();
+  const destRect = topCardDiv.getBoundingClientRect();
+
+  const clone = sourceEl.cloneNode(true);
+  clone.classList.add("flying-card");
+  clone.style.position = "fixed";
+  clone.style.left = srcRect.left + "px";
+  clone.style.top = srcRect.top + "px";
+  clone.style.width = srcRect.width + "px";
+  clone.style.height = srcRect.height + "px";
+  clone.style.zIndex = "9999";
+
+  document.body.appendChild(clone);
+
+  const srcCenterX = srcRect.left + srcRect.width / 2;
+  const srcCenterY = srcRect.top + srcRect.height / 2;
+  const destCenterX = destRect.left + destRect.width / 2;
+  const destCenterY = destRect.top + destRect.height / 2;
+
+  const dx = destCenterX - srcCenterX;
+  const dy = destCenterY - srcCenterY;
+
+  requestAnimationFrame(() => {
+    clone.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(0.9) rotate(8deg)`;
+    clone.style.opacity = "0.85";
+  });
+
+  clone.addEventListener(
+    "transitionend",
+    () => {
+      clone.remove();
+    },
+    { once: true }
+  );
+}
+
+// ===== timer UI =====
+
+function setupTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+
+  if (!currentRoom || !currentRoom.started || !currentRoom.turnDeadline) {
+    turnTimerDiv.textContent = "";
+    return;
+  }
+
+  const update = () => {
+    if (!currentRoom || !currentRoom.turnDeadline) {
+      turnTimerDiv.textContent = "";
+      return;
+    }
+    const now = Date.now();
+    let remaining = currentRoom.turnDeadline - now;
+    if (remaining < 0) remaining = 0;
+    const seconds = Math.ceil(remaining / 1000);
+    turnTimerDiv.textContent = "Time left: " + seconds + "s";
+  };
+
+  update();
+  timerInterval = setInterval(update, 300);
+}
+
+// ===== buttons =====
+
+startButton.addEventListener("click", () => {
+  if (!isHost()) {
+    setError("Only the host can start.");
+    return;
+  }
+  setError("");
+  socket.emit("startGame");
+});
+
+drawButton.addEventListener("click", () => {
+  if (!isMyTurn()) {
+    setError("Not your turn.");
+    return;
+  }
+  setError("");
+  socket.emit("drawCard");
 });
