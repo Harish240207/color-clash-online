@@ -96,14 +96,20 @@ function isHost() {
 }
 
 function getCardImage(card) {
-  if (card.type === "NUMBER") return `cards/${card.color}_${card.value}.png`;
-  if (card.type === "SKIP") return `cards/${card.color}_skip.png`;
-  if (card.type === "REVERSE") return `cards/${card.color}_reverse.png`;
-  if (card.type === "DRAW_TWO") return `cards/${card.color}_draw2.png`;
+  if (!card) return "cards/wild.png";
+
+  const color = (card.color || "").toLowerCase(); // defensive: handle case issues
+  const value = card.value;
+
+  if (card.type === "NUMBER") return `cards/${color}_${value}.png`;
+  if (card.type === "SKIP") return `cards/${color}_skip.png`;
+  if (card.type === "REVERSE") return `cards/${color}_reverse.png`;
+  if (card.type === "DRAW_TWO") return `cards/${color}_draw2.png`;
   if (card.type === "WILD") return "cards/wild.png";
   if (card.type === "WILD_DRAW_FOUR") return "cards/wild_draw4.png";
   return "cards/wild.png";
 }
+
 
 function canPlay(card, topCard) {
   if (!topCard) return true;
