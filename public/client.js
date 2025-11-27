@@ -52,6 +52,29 @@ function formatCardLabel(card) {
   }
 }
 
+// pick the correct PNG file for a card
+function getCardImagePath(card) {
+  if (card.type === "NUMBER") {
+    return `cards/${card.color}_${card.value}.png`;
+  }
+  if (card.type === "SKIP") {
+    return `cards/${card.color}_skip.png`;
+  }
+  if (card.type === "REVERSE") {
+    return `cards/${card.color}_reverse.png`;
+  }
+  if (card.type === "DRAW_TWO") {
+    return `cards/${card.color}_draw2.png`;
+  }
+  if (card.type === "WILD") {
+    return "cards/wild.png";
+  }
+  if (card.type === "WILD_DRAW_FOUR") {
+    return "cards/wild_draw4.png";
+  }
+  return "cards/wild.png"; // fallback
+}
+
 function canPlayClient(card, topCard) {
   if (!topCard) return true;
   if (card.type === "WILD" || card.type === "WILD_DRAW_FOUR") return true;
@@ -175,18 +198,10 @@ function renderRoom() {
       : null;
 
   if (topCard) {
-    topCardDiv.className = "card big-card " + (topCard.color || "");
-    const colorLabel =
-      !topCard.color || topCard.color === "wild"
-        ? "ANY"
-        : topCard.color.toUpperCase();
+    topCardDiv.className = "card big-card";
+    const imgPath = getCardImagePath(topCard);
 
-    topCardDiv.innerHTML = `
-      <div class="card-content">
-        <div class="card-symbol">${formatCardLabel(topCard)}</div>
-        <div class="card-color-label">${colorLabel}</div>
-      </div>
-    `;
+    topCardDiv.innerHTML = `<img src="${imgPath}" alt="" class="card-img" />`;
 
     // small pop animation
     topCardDiv.classList.remove("top-card-pop");
@@ -217,9 +232,7 @@ function renderRoom() {
       statusText.textContent = "You have no playable card. Draw 1 card.";
     }
   } else {
-    const player = currentRoom.players[currentRoom.currentTurnIndex];
-    statusText.textContent =
-      "Waiting for " + (player ? player.name : "player") + "...";
+    const player = currentRoom.players[currentTurnIndex];
   }
 
   startButton.disabled = !isHost() || currentRoom.started;
@@ -236,15 +249,11 @@ function renderHand(topCard) {
 
   me.hand.forEach((card, index) => {
     const btn = document.createElement("button");
-    btn.className = "card hand-card " + (card.color || "");
-    btn.innerHTML = `
-      <div class="card-content">
-        <div class="card-symbol">${formatCardLabel(card)}</div>
-        <div class="card-color-label">${
-          card.color ? card.color.toUpperCase() : ""
-        }</div>
-      </div>
-    `;
+    btn.className = "card hand-card";
+
+    const imgPath = getCardImagePath(card);
+    btn.innerHTML = `<img src="${imgPath}" alt="" class="card-img" />`;
+
     btn.addEventListener("click", () => {
       if (!isMyTurn()) {
         setError("It's not your turn.");
@@ -262,11 +271,11 @@ function renderHand(topCard) {
         pendingWildSourceEl = btn;
         openColorPicker();
       } else {
-        // normal card
         animateCardToCenter(btn);
         socket.emit("playCard", { cardIndex: index });
       }
     });
+
     handCardsDiv.appendChild(btn);
   });
 }
