@@ -12,16 +12,11 @@ const io = new Server(server);
 
 app.use(express.static("public"));
 
-// Rooms structure:
-// rooms = Map<roomCode, {
-//   players: [{id,name,avatar,hand,coins,isHost,team}],
-//   deck: [],
-//   discardPile: [],
-//   started: false,
-//   currentTurnIndex: 0,
-//   turnDeadline: 0
-// }>
+// Rooms: Map<roomCode, { players, deck, discardPile, started, currentTurnIndex, turnDeadline }>
 const rooms = new Map();
+
+// Timers stored separately so they are NEVER sent over socket.io
+const roomTimers = new Map();
 
 // ============================================================
 //  CARD CREATION
@@ -80,11 +75,16 @@ function startTurnTimer(roomCode) {
   room.turnDeadline = Date.now() + duration;
   broadcastState(roomCode);
 
-  if (room.timer) clearTimeout(room.timer);
+  // Clear any existing timer for this room
+  if (roomTimers.has(roomCode)) {
+    clearTimeout(roomTimers.get(roomCode));
+  }
 
-  room.timer = setTimeout(() => {
+  const timer = setTimeout(() => {
     forceAutoMove(roomCode);
   }, duration);
+
+  roomTimers.set(roomCode, timer);
 }
 
 function forceAutoMove(roomCode) {
@@ -155,7 +155,6 @@ function applyCardEffect(card, room) {
   if (card.type === "WILD_DRAW_FOUR") {
     const next = (idx + 1) % room.players.length;
     drawCards(room.players[next], room, 4);
-    // Move turn by 2
     room.currentTurnIndex = (idx + 2) % room.players.length;
     return;
   }
@@ -214,7 +213,12 @@ function endGame(roomCode, winnerId) {
 
   room.started = false;
   room.turnDeadline = null;
-  if (room.timer) clearTimeout(room.timer);
+
+  // Clear timer for this room
+  if (roomTimers.has(roomCode)) {
+    clearTimeout(roomTimers.get(roomCode));
+    roomTimers.delete(roomCode);
+  }
 
   broadcastState(roomCode);
 }
@@ -236,15 +240,15 @@ io.on("connection", (socket) => {
         discardPile: [],
         started: false,
         currentTurnIndex: 0,
-        turnDeadline: 0,
-        timer: null
+        turnDeadline: 0
       });
     }
 
     const room = rooms.get(roomCode);
 
-    if (room.started)
+    if (room.started) {
       return socket.emit("errorMessage", "Game already started.");
+    }
 
     const isHost = room.players.length === 0;
 
@@ -271,57 +275,56 @@ io.on("connection", (socket) => {
   // START GAME
   // ---------------------------
   socket.on("startGame", () => {
-  const roomCode = findRoom(socket.id);
-  if (!roomCode) return;
+    const roomCode = findRoom(socket.id);
+    if (!roomCode) return;
 
-  const room = rooms.get(roomCode);
+    const room = rooms.get(roomCode);
 
-  // Only host can start
-  const host = room.players.find(p => p.isHost);
-  if (!host || host.id !== socket.id) {
-    return socket.emit("errorMessage", "Only the host can start the game.");
-  }
-
-  // Already started?
-  if (room.started) {
-    return socket.emit("errorMessage", "Game already started.");
-  }
-
-  // At least 2 players
-  if (room.players.length < 2) {
-    return socket.emit("errorMessage", "At least 2 players are required to start.");
-  }
-
-  // ===== NORMAL START LOGIC =====
-  room.deck = createDeck();
-  room.discardPile = [];
-  room.started = true;
-
-  // Deduct entry fee
-  room.players.forEach(p => p.coins -= 200);
-
-  // Deal 7 cards
-  room.players.forEach(p => {
-    p.hand = [];
-    for (let i = 0; i < 7; i++) {
-      p.hand.push(room.deck.pop());
+    // Only host can start
+    const host = room.players.find(p => p.isHost);
+    if (!host || host.id !== socket.id) {
+      return socket.emit("errorMessage", "Only the host can start the game.");
     }
+
+    // Already started?
+    if (room.started) {
+      return socket.emit("errorMessage", "Game already started.");
+    }
+
+    // At least 2 players
+    if (room.players.length < 2) {
+      return socket.emit("errorMessage", "At least 2 players are required to start.");
+    }
+
+    // ===== NORMAL START LOGIC =====
+    room.deck = createDeck();
+    room.discardPile = [];
+    room.started = true;
+
+    // Deduct entry fee
+    room.players.forEach(p => p.coins -= 200);
+
+    // Deal 7 cards
+    room.players.forEach(p => {
+      p.hand = [];
+      for (let i = 0; i < 7; i++) {
+        p.hand.push(room.deck.pop());
+      }
+    });
+
+    // Flip first non-wild top card
+    let first = room.deck.pop();
+    while (first.type === "WILD" || first.type === "WILD_DRAW_FOUR") {
+      room.deck.unshift(first);
+      first = room.deck.pop();
+    }
+
+    room.discardPile.push(first);
+    room.currentTurnIndex = 0;
+
+    startTurnTimer(roomCode);
+    broadcastState(roomCode);
   });
-
-  // Flip first non-wild top card
-  let first = room.deck.pop();
-  while (first.type === "WILD" || first.type === "WILD_DRAW_FOUR") {
-    room.deck.unshift(first);
-    first = room.deck.pop();
-  }
-
-  room.discardPile.push(first);
-  room.currentTurnIndex = 0;
-
-  startTurnTimer(roomCode);
-  broadcastState(roomCode);
-});
-
 
   // ---------------------------
   // DRAW CARD
@@ -332,7 +335,7 @@ io.on("connection", (socket) => {
 
     const room = rooms.get(roomCode);
     const idx = room.currentTurnIndex;
-    if (room.players[idx].id !== socket.id) return;
+    if (!room.players[idx] || room.players[idx].id !== socket.id) return;
 
     if (room.deck.length === 0) reshuffle(room);
 
@@ -363,7 +366,7 @@ io.on("connection", (socket) => {
 
     const room = rooms.get(roomCode);
     const idx = room.currentTurnIndex;
-    if (room.players[idx].id !== socket.id) return;
+    if (!room.players[idx] || room.players[idx].id !== socket.id) return;
 
     const player = room.players[idx];
     const card = player.hand[cardIndex];
@@ -412,6 +415,10 @@ io.on("connection", (socket) => {
 
     if (room.players.length === 0) {
       rooms.delete(roomCode);
+      if (roomTimers.has(roomCode)) {
+        clearTimeout(roomTimers.get(roomCode));
+        roomTimers.delete(roomCode);
+      }
       return;
     }
 
