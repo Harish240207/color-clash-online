@@ -336,13 +336,15 @@ body {
 /* Wild color indicator */
 .wild-color-indicator {
   position: absolute;
-  bottom: 6px;
-  right: 6px;
+  top: 6px;
+  left: 6px;
   width: 26px;
   height: 26px;
   border-radius: 999px;
   border: 2px solid white;
+  z-index: 5; /* stay above card art but below name ribbon */
 }
+
 
 .wild-red { background: #f87171; }
 .wild-yellow { background: #fde047; }
