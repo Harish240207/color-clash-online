@@ -62,6 +62,11 @@ const teammateHandsDiv = document.getElementById("teammate-hands");
 
 const errorMessage = document.getElementById("error-message");
 const infoMessage = document.getElementById("info-message");
+const chatMessages = document.getElementById("chat-messages");
+const chatInput = document.getElementById("chat-input");
+const chatSend = document.getElementById("chat-send");
+const chatEmojiButtons = document.querySelectorAll(".chat-emoji");
+
 
 // Wild color picker
 const colorOverlay = document.getElementById("color-picker-overlay");
@@ -215,6 +220,29 @@ socket.on("errorMessage", msg => {
 socket.on("gameOver", data => {
   showLeaderboard(data);
 });
+
+socket.on("chatMessage", ({ from, text }) => {
+  if (!chatMessages) return;
+
+  const row = document.createElement("div");
+  row.className = "chat-message";
+
+  const nameSpan = document.createElement("span");
+  nameSpan.className = "chat-name";
+  nameSpan.textContent = from + ":";
+
+  const textSpan = document.createElement("span");
+  textSpan.className = "chat-text";
+  textSpan.textContent = text;
+
+  row.appendChild(nameSpan);
+  row.appendChild(textSpan);
+  chatMessages.appendChild(row);
+
+  // auto-scroll to bottom
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+});
+
 
 /* ============================================================
    RENDERING
@@ -494,6 +522,35 @@ unoButton.addEventListener("click", () => {
   socket.emit("pressUno");
   setInfo("UNO activated!");
 });
+
+/* ============================================================
+   CHAT SENDING
+   ============================================================ */
+
+function sendChat() {
+  const text = (chatInput.value || "").trim();
+  if (!text) return;
+
+  socket.emit("chatMessage", { text });
+  chatInput.value = "";
+}
+
+chatSend.addEventListener("click", sendChat);
+
+chatInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    sendChat();
+  }
+});
+
+chatEmojiButtons.forEach(btn => {
+  btn.addEventListener("click", () => {
+    chatInput.value += btn.textContent;
+    chatInput.focus();
+  });
+});
+
 
 /* ---------- Wild Color Picker ---------- */
 colorButtons.forEach(btn => {

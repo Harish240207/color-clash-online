@@ -403,6 +403,28 @@ io.on("connection", (socket) => {
     player.pressedUno = true;
   });
 
+    // ---------------------------
+  // CHAT MESSAGE
+  // ---------------------------
+  socket.on("chatMessage", ({ text }) => {
+    const roomCode = findRoom(socket.id);
+    if (!roomCode) return;
+
+    const room = rooms.get(roomCode);
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player) return;
+
+    const trimmed = (text || "").trim();
+    if (!trimmed) return;
+    if (trimmed.length > 200) return; // simple spam limit
+
+    io.to(roomCode).emit("chatMessage", {
+      from: player.name,
+      text: trimmed
+    });
+  });
+
+
   // ---------------------------
   // DISCONNECT
   // ---------------------------
