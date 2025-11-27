@@ -166,6 +166,7 @@ socket.on("gameState", (room) => {
 });
 
 socket.on("errorMessage", (msg) => {
+  // show errors, but don't clear UNO flag here
   setError(msg);
 });
 
@@ -241,22 +242,36 @@ function renderRoom() {
   // table seats
   renderSeats();
 
-  // top card
+  // top card with wild color indicator
   const topCard =
     currentRoom.discardPile && currentRoom.discardPile.length
       ? currentRoom.discardPile[currentRoom.discardPile.length - 1]
       : null;
 
   if (topCard) {
-    topCardDiv.className = "card big-card";
+    topCardDiv.className = "card big-card top-card-wrapper";
     const imgPath = getCardImagePath(topCard);
-    topCardDiv.innerHTML = `<img src="${imgPath}" alt="" class="card-img" />`;
+
+    let indicatorHtml = "";
+    if (topCard.type === "WILD" || topCard.type === "WILD_DRAW_FOUR") {
+      const c = topCard.color;
+      if (["red", "yellow", "green", "blue"].includes(c)) {
+        indicatorHtml = `<div class="wild-color-indicator wild-${c}"></div>`;
+      }
+    }
+
+    topCardDiv.innerHTML = `
+      <div class="card-inner">
+        <img src="${imgPath}" alt="" class="card-img" />
+        ${indicatorHtml}
+      </div>
+    `;
 
     topCardDiv.classList.remove("top-card-pop");
     void topCardDiv.offsetWidth;
     topCardDiv.classList.add("top-card-pop");
   } else {
-    topCardDiv.className = "card big-card";
+    topCardDiv.className = "card big-card top-card-wrapper";
     topCardDiv.textContent = "";
   }
 
@@ -276,7 +291,8 @@ function renderRoom() {
       "Waiting for host to start. Players: " + currentRoom.players.length;
   } else if (myTurn) {
     if (canPlayAny) {
-      statusText.textContent = "Your turn: tap a card to play, or draw 1 card.";
+      statusText.textContent =
+        "Your turn: tap a card to play, or draw 1 card. Press UNO if you have 2 cards.";
     } else {
       statusText.textContent = "You have no playable card. Draw 1 card.";
     }
