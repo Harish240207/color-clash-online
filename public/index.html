@@ -38,9 +38,19 @@
         <div id="center-panel">
           <div id="status-text"></div>
           <div id="turn-timer"></div>
-          <div id="top-card-area">
-            <h3>Top Card</h3>
-            <div id="top-card" class="card big-card"></div>
+
+          <!-- Table layout with players around center -->
+          <div id="table-layout">
+            <div class="table-seat" id="seat-top"></div>
+            <div class="table-seat" id="seat-left"></div>
+
+            <div id="table-center">
+              <h3>Top Card</h3>
+              <div id="top-card" class="card big-card"></div>
+            </div>
+
+            <div class="table-seat" id="seat-right"></div>
+            <div class="table-seat" id="seat-bottom"></div>
           </div>
 
           <div id="actions">
@@ -67,10 +77,10 @@
     <div class="color-picker-dialog">
       <h3>Select Color</h3>
       <div class="color-picker-buttons">
-        <button class="color-btn red" data-color="red">Red</button>
-        <button class="color-btn yellow" data-color="yellow">Yellow</button>
-        <button class="color-btn green" data-color="green">Green</button>
-        <button class="color-btn blue" data-color="blue">Blue</button>
+        <button class="color-btn" data-color="red">Red</button>
+        <button class="color-btn" data-color="yellow">Yellow</button>
+        <button class="color-btn" data-color="green">Green</button>
+        <button class="color-btn" data-color="blue">Blue</button>
       </div>
     </div>
   </div>

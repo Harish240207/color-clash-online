@@ -28,31 +28,17 @@ const infoMessageDiv = document.getElementById("info-message");
 const colorOverlay = document.getElementById("color-picker-overlay");
 const colorButtons = document.querySelectorAll("#color-picker-overlay .color-btn");
 
+// table seats
+const seatTop = document.getElementById("seat-top");
+const seatLeft = document.getElementById("seat-left");
+const seatRight = document.getElementById("seat-right");
+const seatBottom = document.getElementById("seat-bottom");
+
 let timerInterval = null;
 let pendingWildIndex = null;
 let pendingWildSourceEl = null;
 
 // ===== helpers =====
-function formatCardLabel(card) {
-  switch (card.type) {
-    case "NUMBER":
-      return card.value;
-    case "SKIP":
-      return "⏭";
-    case "REVERSE":
-      return "🔄";
-    case "DRAW_TWO":
-      return "+2";
-    case "WILD":
-      return "★";
-    case "WILD_DRAW_FOUR":
-      return "+4";
-    default:
-      return "?";
-  }
-}
-
-// pick the correct PNG file for a card
 function getCardImagePath(card) {
   if (card.type === "NUMBER") {
     return `cards/${card.color}_${card.value}.png`;
@@ -72,7 +58,7 @@ function getCardImagePath(card) {
   if (card.type === "WILD_DRAW_FOUR") {
     return "cards/wild_draw4.png";
   }
-  return "cards/wild.png"; // fallback
+  return "cards/wild.png";
 }
 
 function canPlayClient(card, topCard) {
@@ -160,7 +146,7 @@ socket.on("gameOver", ({ winnerId, winnerName }) => {
 function renderRoom() {
   if (!currentRoom) return;
 
-  // players list
+  // players list on left
   playersList.innerHTML = "";
   currentRoom.players.forEach((p, index) => {
     const li = document.createElement("li");
@@ -191,6 +177,9 @@ function renderRoom() {
     playersList.appendChild(li);
   });
 
+  // table seats
+  renderSeats();
+
   // top card
   const topCard =
     currentRoom.discardPile && currentRoom.discardPile.length
@@ -200,10 +189,8 @@ function renderRoom() {
   if (topCard) {
     topCardDiv.className = "card big-card";
     const imgPath = getCardImagePath(topCard);
-
     topCardDiv.innerHTML = `<img src="${imgPath}" alt="" class="card-img" />`;
 
-    // small pop animation
     topCardDiv.classList.remove("top-card-pop");
     void topCardDiv.offsetWidth;
     topCardDiv.classList.add("top-card-pop");
@@ -232,13 +219,83 @@ function renderRoom() {
       statusText.textContent = "You have no playable card. Draw 1 card.";
     }
   } else {
-    const player = currentRoom.players[currentTurnIndex];
+    const player = currentRoom.players[currentRoom.currentTurnIndex];
+    statusText.textContent =
+      "Waiting for " + (player ? player.name : "player") + "...";
   }
 
   startButton.disabled = !isHost() || currentRoom.started;
   drawButton.disabled = !myTurn;
 
   setupTimer();
+}
+
+function renderSeats() {
+  if (!currentRoom || !currentRoom.players) {
+    seatTop.innerHTML = "";
+    seatLeft.innerHTML = "";
+    seatRight.innerHTML = "";
+    seatBottom.innerHTML = "";
+    return;
+  }
+
+  const players = currentRoom.players;
+  const myIndex = players.findIndex((p) => p.id === myPlayerId);
+
+  const ordered = [];
+  if (myIndex === -1) {
+    for (let i = 0; i < players.length && ordered.length < 4; i++) {
+      ordered.push({ player: players[i], index: i });
+    }
+  } else {
+    ordered.push({ player: players[myIndex], index: myIndex });
+    for (let step = 1; step < players.length && ordered.length < 4; step++) {
+      const idx = (myIndex + step) % players.length;
+      ordered.push({ player: players[idx], index: idx });
+    }
+  }
+
+  const slots = [seatBottom, seatRight, seatTop, seatLeft];
+  slots.forEach((seat) => (seat.innerHTML = ""));
+
+  ordered.forEach((entry, i) => {
+    const seat = slots[i];
+    if (!seat) return;
+
+    const { player, index } = entry;
+    const isMe = player.id === myPlayerId;
+    const isTurn = index === currentRoom.currentTurnIndex && currentRoom.started;
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "seat-wrapper" + (isTurn ? " seat-turn" : "");
+    if (isMe) wrapper.classList.add("seat-me");
+
+    const nameDiv = document.createElement("div");
+    nameDiv.className = "seat-name";
+    nameDiv.textContent = player.name + (isMe ? " (You)" : "");
+
+    const cardsDiv = document.createElement("div");
+    cardsDiv.className = "seat-cards";
+    const countDiv = document.createElement("div");
+    countDiv.className = "seat-card-count";
+    countDiv.textContent = player.hand.length;
+
+    const stackDiv = document.createElement("div");
+    stackDiv.className = "seat-card-stack";
+    const backsToShow = Math.min(3, player.hand.length);
+    for (let i = 0; i < backsToShow; i++) {
+      const back = document.createElement("div");
+      back.className = "seat-card-back";
+      stackDiv.appendChild(back);
+    }
+
+    cardsDiv.appendChild(stackDiv);
+    cardsDiv.appendChild(countDiv);
+    wrapper.appendChild(nameDiv);
+    wrapper.appendChild(cardsDiv);
+
+    seat.appendChild(wrapper);
+  });
 }
 
 function renderHand(topCard) {
@@ -266,7 +323,6 @@ function renderHand(topCard) {
       setError("");
 
       if (card.type === "WILD" || card.type === "WILD_DRAW_FOUR") {
-        // open color picker
         pendingWildIndex = index;
         pendingWildSourceEl = btn;
         openColorPicker();
