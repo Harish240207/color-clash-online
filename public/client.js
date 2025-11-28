@@ -354,6 +354,17 @@ function renderSeats() {
     wrap.appendChild(av);
     wrap.appendChild(name);
 
+    // Show how many cards each player has
+    const count = document.createElement("div");
+    count.className = "seat-card-count";
+    const n = Array.isArray(p.hand) ? p.hand.length : (typeof p.handSize === "number" ? p.handSize : 0);
+    if (p.id === myPlayerId) {
+      count.textContent = `Your cards: ${n}`;
+    } else {
+      count.textContent = `${n} card${n === 1 ? "" : "s"}`;
+    }
+    wrap.appendChild(count);
+
     if (currentRoom.currentTurnIndex >= 0 &&
         arr[currentRoom.currentTurnIndex].id === p.id) {
       wrap.style.boxShadow = "0 0 0 2px #38bdf8";

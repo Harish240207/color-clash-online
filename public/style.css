@@ -309,6 +309,14 @@ body {
 .seat-name {
   font-size: 0.82rem;
 }
+.seat-card-count {
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
+
+.seat-name {
+  font-size: 0.82rem;
+}
 
 /* =====================================
    TOP CARD
@@ -683,4 +691,28 @@ body {
     width: 58px;
     height: 88px;
   }
+}
+
+/* =====================================
+   MOBILE LANDSCAPE COMPACT LAYOUT
+   ===================================== */
+@media (max-height: 500px) and (orientation: landscape) {
+  body { font-size: 14px; }
+  #page-container { padding: 8px; }
+  #main { gap: 8px; }
+  #players-panel { width: 190px; }
+  #table-layout { padding: 18px 10px; border-radius: 20px; }
+  .table-seat { min-width: 80px; }
+  .seat-wrapper { padding: 4px 8px; gap: 6px; }
+  .seat-avatar { width: 30px; height: 30px; }
+  .seat-name { font-size: 0.7rem; }
+  .seat-card-count { font-size: 0.68rem; }
+  #top-card-container .card,
+  #top-card-container .card-img { width: 70px; height: 110px; }
+  #hand-area { margin-top: 8px; padding: 10px; }
+  #hand-area h2 { font-size: 0.95rem; margin-bottom: 6px; }
+  #hand-cards { flex-wrap: nowrap; overflow-x: auto; gap: 6px; }
+  .hand-card { width: 58px; height: 88px; }
+  #actions button { padding: 6px 10px; font-size: 0.8rem; }
+  #chat-messages { max-height: 120px; }
 }
