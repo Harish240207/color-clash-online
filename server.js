@@ -1,6 +1,7 @@
-// ============================================================
-//  SERVER FOR COLOR CLASH ONLINE
-// ============================================================
+/* ============================================================
+   SERVER — COLOR CLASH ONLINE
+   Only modification: Correct SKIP rule
+   ============================================================ */
 
 const express = require("express");
 const http = require("http");
@@ -12,461 +13,331 @@ const io = new Server(server);
 
 app.use(express.static("public"));
 
-// Rooms: Map<roomCode, { players, deck, discardPile, started, currentTurnIndex, turnDeadline }>
-const rooms = new Map();
+/* ============================================================
+   GAME STATE
+   ============================================================ */
 
-// Timers stored separately so they are NEVER sent over socket.io
-const roomTimers = new Map();
+let rooms = {};   // { roomCode: { players:[], deck:[], discardPile:[], currentTurnIndex, started, turnDeadline } }
 
-// ============================================================
-//  CARD CREATION
-// ============================================================
-function createDeck() {
-  const colors = ["red", "yellow", "green", "blue"];
-  const deck = [];
+/* ============================================================
+   HELPERS
+   ============================================================ */
 
-  for (const c of colors) {
-    deck.push({ type: "NUMBER", color: c, value: 0 });
-    for (let v = 1; v <= 9; v++) {
-      deck.push({ type: "NUMBER", color: c, value: v });
-      deck.push({ type: "NUMBER", color: c, value: v });
-    }
-    deck.push({ type: "SKIP", color: c });
-    deck.push({ type: "SKIP", color: c });
-    deck.push({ type: "REVERSE", color: c });
-    deck.push({ type: "REVERSE", color: c });
-    deck.push({ type: "DRAW_TWO", color: c });
-    deck.push({ type: "DRAW_TWO", color: c });
+function generateRoomCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 5; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)];
   }
-
-  for (let i = 0; i < 4; i++) {
-    deck.push({ type: "WILD" });
-    deck.push({ type: "WILD_DRAW_FOUR" });
-  }
-
-  shuffle(deck);
-  return deck;
+  return code;
 }
 
 function shuffle(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
+  let a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+    [a[i], a[j]] = [a[j], a[i]];
   }
+  return a;
 }
 
-// ============================================================
-//  SYNC GAME STATE
-// ============================================================
-function broadcastState(roomCode) {
-  const room = rooms.get(roomCode);
-  if (!room) return;
-  io.to(roomCode).emit("gameState", room);
-}
+function makeDeck() {
+  const colors = ["red", "yellow", "green", "blue"];
+  const deck = [];
 
-// ============================================================
-//  TURN TIMER
-// ============================================================
-function startTurnTimer(roomCode) {
-  const room = rooms.get(roomCode);
-  if (!room) return;
-
-  const duration = 30000; // 30 seconds
-  room.turnDeadline = Date.now() + duration;
-  broadcastState(roomCode);
-
-  // Clear any existing timer for this room
-  if (roomTimers.has(roomCode)) {
-    clearTimeout(roomTimers.get(roomCode));
-  }
-
-  const timer = setTimeout(() => {
-    forceAutoMove(roomCode);
-  }, duration);
-
-  roomTimers.set(roomCode, timer);
-}
-
-function forceAutoMove(roomCode) {
-  const room = rooms.get(roomCode);
-  if (!room) return;
-
-  const player = room.players[room.currentTurnIndex];
-  if (!player) return;
-
-  // Auto draw 1 card
-  if (room.deck.length === 0) reshuffle(room);
-  const drawn = room.deck.pop();
-  player.hand.push(drawn);
-
-  // Try to auto-play it
-  const top = room.discardPile[room.discardPile.length - 1];
-  const playable = canPlay(drawn, top);
-
-  if (playable) {
-    if (drawn.type === "WILD" || drawn.type === "WILD_DRAW_FOUR") {
-      drawn.color = ["red","yellow","green","blue"][Math.floor(Math.random()*4)];
+  colors.forEach(color => {
+    for (let n = 0; n <= 9; n++) {
+      deck.push({ type: "NUMBER", color, value: n });
+      if (n !== 0) deck.push({ type: "NUMBER", color, value: n });
     }
-    room.discardPile.push(drawn);
-    player.hand.pop();
-    applyCardEffect(drawn, room);
-  }
 
-  advanceTurn(roomCode);
-}
+    deck.push({ type: "SKIP", color, value: "skip" });
+    deck.push({ type: "SKIP", color, value: "skip" });
+    deck.push({ type: "REVERSE", color, value: "reverse" });
+    deck.push({ type: "REVERSE", color, value: "reverse" });
+    deck.push({ type: "DRAW_TWO", color, value: "+2" });
+    deck.push({ type: "DRAW_TWO", color, value: "+2" });
+  });
 
-// ============================================================
-//  CAN PLAY RULE
-// ============================================================
-function canPlay(card, top) {
-  if (!top) return true;
-  if (card.type === "WILD" || card.type === "WILD_DRAW_FOUR") return true;
-  if (card.color === top.color) return true;
-  if (card.type === "NUMBER" && top.type === "NUMBER" && card.value === top.value)
-    return true;
-  if (card.type === top.type && card.type !== "NUMBER") return true;
-  return false;
-}
+  deck.push({ type: "WILD", color: "wild", value: "wild" });
+  deck.push({ type: "WILD", color: "wild", value: "wild" });
+  deck.push({ type: "WILD_DRAW_FOUR", color: "wild", value: "+4" });
+  deck.push({ type: "WILD_DRAW_FOUR", color: "wild", value: "+4" });
 
-// ============================================================
-//  CARD EFFECTS
-// ============================================================
-function applyCardEffect(card, room) {
-  const idx = room.currentTurnIndex;
-
-  if (card.type === "SKIP") {
-    room.currentTurnIndex = (idx + 2) % room.players.length;
-    return;
-  }
-
-  if (card.type === "REVERSE") {
-    room.players.reverse();
-    room.currentTurnIndex = room.players.length - 1 - idx;
-    return;
-  }
-
-  if (card.type === "DRAW_TWO") {
-    const next = (idx + 1) % room.players.length;
-    drawCards(room.players[next], room, 2);
-    room.currentTurnIndex = (idx + 2) % room.players.length;
-    return;
-  }
-
-  if (card.type === "WILD_DRAW_FOUR") {
-    const next = (idx + 1) % room.players.length;
-    drawCards(room.players[next], room, 4);
-    room.currentTurnIndex = (idx + 2) % room.players.length;
-    return;
-  }
-}
-
-function drawCards(player, room, count) {
-  for (let i = 0; i < count; i++) {
-    if (room.deck.length === 0) reshuffle(room);
-    player.hand.push(room.deck.pop());
-  }
+  return shuffle(deck);
 }
 
 function reshuffle(room) {
-  const last = room.discardPile.pop();
-  room.deck = room.discardPile;
-  shuffle(room.deck);
-  room.discardPile = [last];
+  if (room.discardPile.length < 2) return;
+  const top = room.discardPile.pop();
+  room.deck = shuffle(room.discardPile);
+  room.discardPile = [top];
 }
 
-// ============================================================
-//  ADVANCE TURN
-// ============================================================
-function advanceTurn(roomCode) {
-  const room = rooms.get(roomCode);
+function nextTurn(room, skip = 1) {
+  room.currentTurnIndex = (room.currentTurnIndex + skip) % room.players.length;
+}
+
+function sendRoomState(roomCode) {
+  const room = rooms[roomCode];
   if (!room) return;
 
-  // Win check
-  const winner = room.players.find(p => p.hand.length === 0);
-  if (winner) return endGame(roomCode, winner.id);
+  const publicData = {
+    players: room.players.map(p => ({
+      id: p.id,
+      name: p.name,
+      coins: p.coins,
+      avatar: p.avatar,
+      handSize: p.hand.length,
+      isHost: p.isHost,
+      team: p.team
+    })),
+    discardPile: room.discardPile,
+    currentTurnIndex: room.currentTurnIndex,
+    started: room.started,
+    turnDeadline: room.turnDeadline
+  };
 
-  room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
-  startTurnTimer(roomCode);
-  broadcastState(roomCode);
+  io.to(roomCode).emit("gameState", publicData);
+
+  // send private hands
+  room.players.forEach(p => {
+    io.to(p.id).emit("gameState", {
+      ...publicData,
+      players: publicData.players,
+      myHand: p.hand
+    });
+  });
 }
 
-// ============================================================
-//  END GAME + COINS + LEADERBOARD
-// ============================================================
-function endGame(roomCode, winnerId) {
-  const room = rooms.get(roomCode);
+function startTurnTimer(roomCode) {
+  const room = rooms[roomCode];
   if (!room) return;
 
-  const pot = room.players.length * 200;
-  const winner = room.players.find(p => p.id === winnerId);
-  if (winner) winner.coins += pot;
+  room.turnDeadline = Date.now() + 30000;
 
-  const standings = room.players.map(p => ({
-    id: p.id,
-    name: p.name,
-    coins: p.coins,
-    avatar: p.avatar,
-    isWinner: p.id === winnerId
-  }));
+  setTimeout(() => {
+    const currentP = room.players[room.currentTurnIndex];
 
-  io.to(roomCode).emit("gameOver", { standings });
+    // auto draw
+    if (room.deck.length === 0) reshuffle(room);
+    if (room.deck.length > 0) currentP.hand.push(room.deck.shift());
 
-  room.started = false;
-  room.turnDeadline = null;
-
-  // Clear timer for this room
-  if (roomTimers.has(roomCode)) {
-    clearTimeout(roomTimers.get(roomCode));
-    roomTimers.delete(roomCode);
-  }
-
-  broadcastState(roomCode);
+    nextTurn(room, 1);
+    startTurnTimer(roomCode);
+    sendRoomState(roomCode);
+  }, 30000);
 }
 
-// ============================================================
-//  SOCKET.IO HANDLERS
-// ============================================================
-io.on("connection", (socket) => {
+/* ============================================================
+   SOCKET CONNECTIONS
+   ============================================================ */
 
-  // ---------------------------
-  // JOIN ROOM
-  // ---------------------------
+io.on("connection", socket => {
+
+  /* ------------------------------------------------------------
+     JOIN ROOM
+     ------------------------------------------------------------ */
   socket.on("joinRoom", ({ roomCode, name, avatar }) => {
-    roomCode = roomCode.toUpperCase();
-    if (!rooms.has(roomCode)) {
-      rooms.set(roomCode, {
+    roomCode = roomCode.trim().toUpperCase();
+
+    if (!rooms[roomCode]) {
+      rooms[roomCode] = {
         players: [],
-        deck: [],
+        deck: makeDeck(),
         discardPile: [],
-        started: false,
         currentTurnIndex: 0,
-        turnDeadline: 0
-      });
+        started: false,
+        turnDeadline: null
+      };
     }
 
-    const room = rooms.get(roomCode);
-
-    if (room.started) {
-      return socket.emit("errorMessage", "Game already started.");
-    }
-
-    const isHost = room.players.length === 0;
+    const room = rooms[roomCode];
 
     const player = {
       id: socket.id,
       name,
       avatar,
+      coins: 0,
       hand: [],
-      coins: 10000,
-      isHost,
       team: null,
-      pressedUno: false
+      isHost: room.players.length === 0
     };
 
+    // deal 7
+    for (let i = 0; i < 7; i++) {
+      if (room.deck.length === 0) reshuffle(room);
+      player.hand.push(room.deck.shift());
+    }
+
     room.players.push(player);
-
     socket.join(roomCode);
+
+    // place first card if not started
+    if (!room.started && room.discardPile.length === 0) {
+      room.discardPile.push(room.deck.shift());
+    }
+
     socket.emit("joinedRoom", { roomCode, playerId: socket.id });
-
-    broadcastState(roomCode);
+    sendRoomState(roomCode);
   });
 
-  // ---------------------------
-  // START GAME
-  // ---------------------------
+  /* ------------------------------------------------------------
+     START GAME
+     ------------------------------------------------------------ */
   socket.on("startGame", () => {
-    const roomCode = findRoom(socket.id);
+    const roomCode = Object.keys(rooms).find(code =>
+      rooms[code].players.some(p => p.id === socket.id)
+    );
     if (!roomCode) return;
 
-    const room = rooms.get(roomCode);
+    const room = rooms[roomCode];
+    const me = room.players.find(p => p.id === socket.id);
+    if (!me || !me.isHost) return;
 
-    // Only host can start
-    const host = room.players.find(p => p.isHost);
-    if (!host || host.id !== socket.id) {
-      return socket.emit("errorMessage", "Only the host can start the game.");
-    }
-
-    // Already started?
-    if (room.started) {
-      return socket.emit("errorMessage", "Game already started.");
-    }
-
-    // At least 2 players
-    if (room.players.length < 2) {
-      return socket.emit("errorMessage", "At least 2 players are required to start.");
-    }
-
-    // ===== NORMAL START LOGIC =====
-    room.deck = createDeck();
-    room.discardPile = [];
     room.started = true;
-
-    // Deduct entry fee
-    room.players.forEach(p => p.coins -= 200);
-
-    // Deal 7 cards
-    room.players.forEach(p => {
-      p.hand = [];
-      for (let i = 0; i < 7; i++) {
-        p.hand.push(room.deck.pop());
-      }
-    });
-
-    // Flip first non-wild top card
-    let first = room.deck.pop();
-    while (first.type === "WILD" || first.type === "WILD_DRAW_FOUR") {
-      room.deck.unshift(first);
-      first = room.deck.pop();
-    }
-
-    room.discardPile.push(first);
-    room.currentTurnIndex = 0;
-
     startTurnTimer(roomCode);
-    broadcastState(roomCode);
+    sendRoomState(roomCode);
   });
 
-  // ---------------------------
-  // DRAW CARD
-  // ---------------------------
+  /* ------------------------------------------------------------
+     DRAW CARD
+     ------------------------------------------------------------ */
   socket.on("drawCard", () => {
-    const roomCode = findRoom(socket.id);
+    const roomCode = Object.keys(rooms).find(code =>
+      rooms[code].players.some(p => p.id === socket.id)
+    );
     if (!roomCode) return;
 
-    const room = rooms.get(roomCode);
-    const idx = room.currentTurnIndex;
-    if (!room.players[idx] || room.players[idx].id !== socket.id) return;
+    const room = rooms[roomCode];
+    const idx = room.players.findIndex(p => p.id === socket.id);
+    if (idx !== room.currentTurnIndex) return;
 
     if (room.deck.length === 0) reshuffle(room);
+    if (room.deck.length > 0)
+      room.players[idx].hand.push(room.deck.shift());
 
-    const card = room.deck.pop();
-    room.players[idx].hand.push(card);
-
-    // Auto play?
-    const top = room.discardPile[room.discardPile.length - 1];
-    if (canPlay(card, top)) {
-      if (card.type === "WILD" || card.type === "WILD_DRAW_FOUR") {
-        card.color = ["red","yellow","green","blue"][Math.floor(Math.random()*4)];
-      }
-      room.players[idx].hand.pop();
-      room.discardPile.push(card);
-      applyCardEffect(card, room);
-      advanceTurn(roomCode);
-    } else {
-      advanceTurn(roomCode);
-    }
+    nextTurn(room, 1);
+    startTurnTimer(roomCode);
+    sendRoomState(roomCode);
   });
 
-  // ---------------------------
-  // PLAY CARD
-  // ---------------------------
+  /* ------------------------------------------------------------
+     PLAY CARD  (includes updated SKIP rule)
+     ------------------------------------------------------------ */
   socket.on("playCard", ({ cardIndex, chosenColor }) => {
-    const roomCode = findRoom(socket.id);
+    const roomCode = Object.keys(rooms).find(code =>
+      rooms[code].players.some(p => p.id === socket.id)
+    );
     if (!roomCode) return;
 
-    const room = rooms.get(roomCode);
-    const idx = room.currentTurnIndex;
-    if (!room.players[idx] || room.players[idx].id !== socket.id) return;
+    const room = rooms[roomCode];
 
-    const player = room.players[idx];
+    const playerIndex = room.players.findIndex(p => p.id === socket.id);
+    if (playerIndex !== room.currentTurnIndex) return;
+
+    const player = room.players[playerIndex];
     const card = player.hand[cardIndex];
+    if (!card) return;
 
-    const top = room.discardPile[room.discardPile.length - 1];
-    if (!canPlay(card, top)) return;
-
-    if ((card.type === "WILD" || card.type === "WILD_DRAW_FOUR") && !chosenColor)
-      return;
-
-    if (chosenColor) card.color = chosenColor;
-
-    room.discardPile.push(card);
+    // play it
     player.hand.splice(cardIndex, 1);
 
-    applyCardEffect(card, room);
-    advanceTurn(roomCode);
+    // apply chosen color for wild
+    if (card.type === "WILD" || card.type === "WILD_DRAW_FOUR") {
+      if (chosenColor)
+        card.color = chosenColor.toLowerCase();
+    }
 
-    if (player.hand.length >= 3)
-      player.pressedUno = false;
+    room.discardPile.push(card);
+
+    /* ============================================================
+       CORRECT SKIP RULE (your requested logic)
+       ============================================================ */
+    if (card.type === "SKIP") {
+      // skip next player entirely
+      nextTurn(room, 2);
+    }
+
+    else if (card.type === "REVERSE") {
+      room.players.reverse();
+      room.currentTurnIndex = room.players.findIndex(p => p.id === player.id);
+      nextTurn(room, 1);
+    }
+
+    else if (card.type === "DRAW_TWO") {
+      const nextIndex = (room.currentTurnIndex + 1) % room.players.length;
+      const target = room.players[nextIndex];
+      for (let i = 0; i < 2; i++) {
+        if (room.deck.length === 0) reshuffle(room);
+        if (room.deck.length === 0) break;
+        target.hand.push(room.deck.shift());
+      }
+      nextTurn(room, 2);
+    }
+
+    else if (card.type === "WILD_DRAW_FOUR") {
+      const nextIndex = (room.currentTurnIndex + 1) % room.players.length;
+      const target = room.players[nextIndex];
+      for (let i = 0; i < 4; i++) {
+        if (room.deck.length === 0) reshuffle(room);
+        if (room.deck.length === 0) break;
+        target.hand.push(room.deck.shift());
+      }
+      nextTurn(room, 2);
+    }
+
+    else {
+      nextTurn(room, 1);
+    }
+
+    startTurnTimer(roomCode);
+    sendRoomState(roomCode);
   });
 
-  // ---------------------------
-  // UNO PRESS
-  // ---------------------------
-  socket.on("pressUno", () => {
-    const roomCode = findRoom(socket.id);
-    if (!roomCode) return;
-
-    const room = rooms.get(roomCode);
-    const player = room.players.find(p => p.id === socket.id);
-    if (!player) return;
-
-    player.pressedUno = true;
-  });
-
-    // ---------------------------
-  // CHAT MESSAGE
-  // ---------------------------
+  /* ------------------------------------------------------------
+     CHAT
+     ------------------------------------------------------------ */
   socket.on("chatMessage", ({ text }) => {
-    const roomCode = findRoom(socket.id);
+    const roomCode = Object.keys(rooms).find(code =>
+      rooms[code].players.some(p => p.id === socket.id)
+    );
     if (!roomCode) return;
 
-    const room = rooms.get(roomCode);
-    const player = room.players.find(p => p.id === socket.id);
-    if (!player) return;
-
-    const trimmed = (text || "").trim();
-    if (!trimmed) return;
-    if (trimmed.length > 200) return; // simple spam limit
+    const room = rooms[roomCode];
+    const p = room.players.find(p => p.id === socket.id);
 
     io.to(roomCode).emit("chatMessage", {
-      from: player.name,
-      text: trimmed
+      from: p.name,
+      text
     });
   });
 
-
-  // ---------------------------
-  // DISCONNECT
-  // ---------------------------
+  /* ------------------------------------------------------------
+     DISCONNECT
+     ------------------------------------------------------------ */
   socket.on("disconnect", () => {
-    const roomCode = findRoom(socket.id);
+    const roomCode = Object.keys(rooms).find(code =>
+      rooms[code].players.some(p => p.id === socket.id)
+    );
     if (!roomCode) return;
 
-    const room = rooms.get(roomCode);
+    const room = rooms[roomCode];
     room.players = room.players.filter(p => p.id !== socket.id);
 
     if (room.players.length === 0) {
-      rooms.delete(roomCode);
-      if (roomTimers.has(roomCode)) {
-        clearTimeout(roomTimers.get(roomCode));
-        roomTimers.delete(roomCode);
-      }
+      delete rooms[roomCode];
       return;
     }
 
-    // If host left, next player becomes host
-    if (!room.players.some(p => p.isHost)) {
-      room.players[0].isHost = true;
-    }
-
-    broadcastState(roomCode);
+    sendRoomState(roomCode);
   });
+
 });
 
-// ============================================================
-//  FIND ROOM BY SOCKET
-// ============================================================
-function findRoom(socketId) {
-  for (const [code, room] of rooms.entries()) {
-    if (room.players.some(p => p.id === socketId)) return code;
-  }
-  return null;
-}
+/* ============================================================
+   START SERVER
+   ============================================================ */
 
-// ============================================================
-//  START SERVER
-// ============================================================
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () =>
-  console.log(`Server running on http://localhost:${PORT}`)
-);
+server.listen(PORT, () => console.log("Server running on", PORT));

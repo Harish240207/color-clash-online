@@ -1,33 +1,22 @@
-/* =====================================
-   GLOBAL STYLES
-   ===================================== */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-html,
-body {
+/* ============================================================
+   GLOBAL STRUCTURE + GALAXY BACKGROUND
+   ============================================================ */
+html, body {
   margin: 0;
   padding: 0;
-  font-family: system-ui, sans-serif;
-  background: radial-gradient(circle at top, #233e8b 0, #050816 55%, #02040a 100%);
-  color: #f5f5f5;
-  height: 100%;
-}
-
-body {
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-}
-
-#app {
   width: 100%;
-  max-width: 1100px;
-  padding: 20px;
-  margin-bottom: 40px;
+  height: 100%;
+  font-family: system-ui, sans-serif;
+  overflow: hidden;
+  color: #fff;
+}
+
+#galaxy-bg {
+  position: fixed;
+  inset: 0;
+  background: url("galaxy.jpg") center/cover no-repeat;
+  filter: brightness(0.72) blur(1px);
+  z-index: -5;
 }
 
 /* Utility */
@@ -36,32 +25,42 @@ body {
 }
 
 .error {
-  color: #ff6b6b;
+  color: #ff6666;
   font-size: 0.9rem;
-  margin-top: 6px;
 }
 
+/* Buttons */
 .primary-btn {
-  width: 100%;
-  padding: 12px;
+  padding: 12px 20px;
   border-radius: 999px;
   border: none;
   cursor: pointer;
   background: linear-gradient(135deg, #ffd54a, #ffb020);
   color: #111;
   font-weight: 700;
-  font-size: 1rem;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.55);
 }
 
-/* =====================================
-   LOGIN + AVATAR + JOIN SCREEN
-   ===================================== */
+.secondary-btn {
+  padding: 12px 20px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  color: #111;
+  border: none;
+  cursor: pointer;
+}
+
+/* ============================================================
+   LOGIN SCREEN
+   ============================================================ */
 #login-screen {
-  max-width: 450px;
-  margin: 0 auto;
-  padding-top: 30px;
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  margin: auto;
+  max-width: 400px;
   text-align: center;
+  padding-top: 50px;
+  z-index: 2;
 }
 
 #login-screen h1 {
@@ -72,219 +71,199 @@ body {
 }
 
 .card-panel {
-  background: rgba(7, 10, 26, 0.96);
-  border-radius: 20px;
+  background: rgba(0,0,0,0.65);
   padding: 20px;
-  margin-top: 20px;
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-/* Emoji grid */
-#emoji-grid {
-  font-size: 2rem;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: center;
-  cursor: pointer;
+  border-radius: 18px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.06);
 }
 
 #emoji-grid span {
   cursor: pointer;
-  padding: 6px;
-  border-radius: 999px;
-  transition: transform 0.1s;
+  font-size: 2rem;
+  padding: 4px;
+  transition: 0.15s;
 }
-
 #emoji-grid span:hover {
   transform: scale(1.25);
 }
 
-/* Avatar upload */
-#avatar-upload {
-  margin-top: 10px;
-}
-
 #avatar-preview {
-  margin-top: 15px;
+  margin: 10px auto 0 auto;
   width: 120px;
   height: 120px;
   border-radius: 999px;
-  border: 3px solid #fff;
-  margin-left: auto;
-  margin-right: auto;
   overflow: hidden;
-  background: #111;
+  background: #000;
+  border: 3px solid white;
 }
-
 #avatar-preview img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-/* Join room */
-#join-panel label {
-  display: block;
-  text-align: left;
-  margin-bottom: 12px;
-  font-size: 0.9rem;
-}
-
-#join-panel input {
-  width: 100%;
-  padding: 10px;
-  border-radius: 12px;
-  border: none;
-  background: #131626;
-  color: #fff;
-  margin-top: 5px;
-}
-
-/* =====================================
+/* ============================================================
    GAME SCREEN
-   ===================================== */
-#game-screen header {
-  margin-bottom: 10px;
-}
-
-#game-screen header h1 {
-  font-size: 1.6rem;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-}
-
-#room-info {
-  background: rgba(0, 0, 0, 0.5);
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-size: 0.9rem;
-}
-
-/* =====================================
-   TABLE AREA
-   ===================================== */
-#table-area {
+   ============================================================ */
+#game-screen {
+  position: absolute;
+  inset: 0;
+  padding: 10px;
   display: flex;
-  gap: 16px;
+  flex-direction: column;
 }
 
-/* Players panel */
-#players-panel {
-  width: 230px;
-  background: rgba(7, 10, 26, 0.96);
-  border-radius: 20px;
-  padding: 15px;
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-#players-panel h2 {
-  margin: 0 0 10px;
-}
-
-#players-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-#players-list li {
+#top-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: rgba(25, 30, 45, 0.9);
-  padding: 8px 12px;
-  border-radius: 14px;
-  margin-bottom: 6px;
-  font-size: 0.85rem;
-  border: 1px solid rgba(255,255,255,0.04);
+  margin-bottom: 8px;
 }
-
-.player-avatar-small {
-  width: 28px;
-  height: 28px;
+.header-title {
+  margin: 0;
+  font-size: 1.4rem;
+}
+#room-info {
+  padding: 6px 12px;
+  background: rgba(0,0,0,0.5);
   border-radius: 999px;
-  overflow: hidden;
-  margin-right: 8px;
-  flex-shrink: 0;
 }
 
-.player-avatar-small img {
+/* ============================================================
+   GALAXY ARENA — CIRCULAR TABLE LAYOUT (3+ players)
+   ============================================================ */
+#arena-container {
+  position: relative;
+  flex: 1;
+  margin-top: 8px;
+}
+
+/* 3D Oval Table */
+#table-oval {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 600px;
+  height: 350px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle at center, rgba(255,255,255,0.07) 0%, rgba(0,0,0,0.9) 70%);
+  box-shadow:
+    0 0 45px rgba(255,255,255,0.4),
+    inset 0 0 70px rgba(0,0,0,0.8);
+
+  border: 2px solid rgba(255,255,255,0.1);
+}
+
+/* Top card in center of table */
+#center-card-area {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -52%);
+  text-align: center;
+}
+
+/* UNO-stacked card style */
+#center-card-area .card {
+  width: 130px;
+  height: 185px;
+  border-radius: 16px;
+  border: 2px solid white;
+  background: black;
+  position: relative;
+}
+
+/* stacked under-cards */
+#center-card-area .stack1,
+#center-card-area .stack2 {
+  position: absolute;
+  width: 130px;
+  height: 185px;
+  border-radius: 16px;
+  opacity: 0.3;
+  border: 2px solid white;
+  background: black;
+  z-index: -1;
+}
+.stack1 { transform: rotate(-6deg) translate(-15px, -12px); }
+.stack2 { transform: rotate(8deg) translate(15px, -10px); }
+
+/* ============================================================
+   FLOATING 3D AVATAR BUBBLES — circular players
+   ============================================================ */
+#players-ring {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.player-bubble {
+  position: absolute;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffffff, #cccccc);
+  box-shadow: 0 0 25px rgba(255,255,255,0.4);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #111;
+  font-size: 2.2rem;
+  border: 3px solid rgba(255,255,255,0.7);
+}
+.player-bubble img {
   width: 100%;
   height: 100%;
+  border-radius: 50%;
   object-fit: cover;
 }
-
-.player-me {
-  border: 1px solid #ffb020 !important;
-}
-.player-turn {
-  box-shadow: 0 0 0 2px #38bdf8;
+.player-bubble.turn {
+  box-shadow: 0 0 40px gold;
 }
 
-.player-host-tag {
-  background: #ffb020;
-  color: #111;
-  padding: 2px 6px;
-  border-radius: 999px;
-  font-size: 0.7rem;
-  margin-left: 6px;
+/* Name under bubble */
+.player-name-tag {
+  position: absolute;
+  top: 98px;
+  width: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  font-size: 0.75rem;
 }
 
-.player-team-tag {
-  background: #22c55e;
-  color: #0b1220;
-  padding: 2px 6px;
-  border-radius: 999px;
-  font-size: 0.7rem;
-  margin-left: 6px;
+/* Card count */
+.player-cardcount {
+  position: absolute;
+  top: 115px;
+  width: 130px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  opacity: 0.85;
+  font-size: 0.75rem;
 }
 
-/* =====================================
-   CENTER PANEL
-   ===================================== */
-#center-panel {
-  flex: 1;
-  background: rgba(7, 10, 26, 0.96);
-  border-radius: 20px;
-  padding: 16px;
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-#status-text {
-  margin-bottom: 6px;
-}
-
-#turn-timer {
-  color: #facc15;
-  margin-bottom: 10px;
-}
-
-/* Table layout */
+/* ============================================================
+   CLASSIC SEAT LAYOUT (2 players) — preserved
+   ============================================================ */
 #table-layout {
-  margin-top: 6px;
   position: relative;
   padding: 30px 20px;
-  border-radius: 28px;
-  background: radial-gradient(circle at top, #101628 0, #050816 70%);
 }
-
 .table-seat {
   position: absolute;
-  min-width: 110px;
 }
-
-#seat-top { top: 10px; left: 50%; transform: translateX(-50%); }
+#seat-top    { top: 10px; left: 50%; transform: translateX(-50%); }
 #seat-bottom { bottom: 10px; left: 50%; transform: translateX(-50%); }
-#seat-left { left: 10px; top: 50%; transform: translateY(-50%); }
-#seat-right { right: 10px; top: 50%; transform: translateY(-50%); }
+#seat-left   { left: 10px; top: 50%; transform: translateY(-50%); }
+#seat-right  { right: 10px; top: 50%; transform: translateY(-50%); }
 
-/* Seat wrapper */
+/* seat box */
 .seat-wrapper {
-  background: rgba(17, 24, 39, 0.95);
+  background: rgba(0,0,0,0.55);
   padding: 6px 10px;
   border-radius: 999px;
   display: flex;
@@ -299,420 +278,133 @@ body {
   border-radius: 999px;
   overflow: hidden;
 }
-
 .seat-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
-
 .seat-name {
   font-size: 0.82rem;
 }
 .seat-card-count {
-  font-size: 0.72rem;
-  opacity: 0.85;
+  font-size: 0.7rem;
+  opacity: 0.8;
 }
 
-.seat-name {
-  font-size: 0.82rem;
-}
-
-/* =====================================
-   TOP CARD
-   ===================================== */
-.card {
-  position: relative;
-  border-radius: 16px;
-  overflow: hidden;
-  background: #000;
-  border: 2px solid #fff;
-}
-
-.big-card {
-  width: 120px;
-  height: 170px;
-  margin: 0 auto;
-}
-
-.card-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-/* Wild color indicator */
-.wild-color-indicator {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  border: 2px solid white;
-  z-index: 5; /* stay above card art but below name ribbon */
-}
-
-
-.wild-red { background: #f87171; }
-.wild-yellow { background: #fde047; }
-.wild-green { background: #4ade80; }
-.wild-blue { background: #60a5fa; }
-
-/* =====================================
-   HAND
-   ===================================== */
+/* ============================================================
+   HAND AREA — CURVED LAYOUT
+   ============================================================ */
 #hand-area {
-  margin-top: 16px;
-  background: rgba(7, 10, 26, 0.96);
-  border-radius: 20px;
-  padding: 16px;
-  box-shadow: 0 18px 40px rgba(0,0,0,0.55);
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  padding: 10px 20px 20px;
+  background: rgba(0,0,0,0.6);
+  box-shadow: 0 -6px 25px rgba(0,0,0,0.8);
+  border-radius: 20px 20px 0 0;
 }
 
 #hand-cards {
+  position: relative;
+  width: 100%;
+  height: 160px;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  justify-content: center;
+  gap: 0;
 }
 
 .hand-card {
-  width: 80px;
-  height: 120px;
+  width: 95px;
+  height: 140px;
   border-radius: 14px;
-  border: 2px solid #fff;
+  border: 2px solid white;
+  margin: 0 -30px;
+  transition: transform 0.15s;
   cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.15s;
 }
-
 .hand-card:hover {
-  transform: translateY(-6px);
-  box-shadow: 0 12px 26px rgba(0,0,0,0.7);
+  transform: translateY(-15px) scale(1.05);
 }
 
-/* =====================================
-   ACTION BUTTONS
-   ===================================== */
-#actions button {
-  padding: 10px 18px;
-  border-radius: 999px;
-  border: none;
-  cursor: pointer;
-  box-shadow: 0 10px 22px rgba(0,0,0,0.6);
-  font-weight: 600;
-  margin-right: 10px;
+/* ============================================================
+   OPPONENT CARDS (angled)
+   ============================================================ */
+.opponent-card {
+  width: 60px;
+  height: 90px;
+  border-radius: 10px;
+  background: #000;
+  border: 2px solid white;
+  transform: rotate(var(--angle));
 }
 
-#start-button { background: #fbbf24; }
-#draw-button { background: #e5e7eb; color: #111; }
-
-/* =====================================
-   UNO BUTTON
-   ===================================== */
+/* ============================================================
+   UNO BUTTON + FULLSCREEN
+   ============================================================ */
 #uno-button {
-  position: fixed;
+  position: absolute;
   right: 16px;
-  bottom: 16px;
+  bottom: 180px;
   padding: 12px 26px;
   border-radius: 999px;
   background: #ff5252;
-  color: #fff;
-  font-weight: 700;
   border: none;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.55);
+  font-weight: 700;
   z-index: 20;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.65);
+}
+#uno-button.uno-active {
+  animation: unoPulse 0.7s infinite alternate;
+}
+@keyframes unoPulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.14); }
 }
 
-/* Fullscreen button */
 #fullscreen-button {
-  position: fixed;
-  left: 16px;
-  bottom: 16px;
+  position: absolute;
+  left: 12px;
+  bottom: 180px;
   width: 36px;
   height: 36px;
   border-radius: 999px;
-  border: none;
-  background: rgba(15, 23, 42, 0.9);
-  color: #fff;
-  font-size: 1rem;
-  box-shadow: 0 8px 18px rgba(0,0,0,0.6);
-  z-index: 20;
-}
-
-#uno-button.uno-active {
-  transform: scale(1.08);
-  box-shadow: 0 0 20px rgba(255,82,82,0.8);
-}
-
-/* =====================================
-   WILD COLOR PICKER
-   ===================================== */
-#color-picker-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(10, 15, 30, 0.7);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 40;
-}
-
-#color-picker-overlay.hidden {
-  display: none;
-}
-
-.color-picker-dialog {
-  background: #111;
-  padding: 20px;
-  border-radius: 18px;
-  text-align: center;
-  border: 1px solid rgba(255,255,255,0.15);
-}
-
-.color-picker-buttons {
-  display: flex;
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.color-btn {
-  padding: 10px 20px;
-  border-radius: 999px;
-  border: none;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid white;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.6);
   cursor: pointer;
-  color: #111;
-  font-weight: 700;
 }
 
-.color-btn[data-color="red"] { background: #f87171; }
-.color-btn[data-color="yellow"] { background: #fde047; }
-.color-btn[data-color="green"] { background: #4ade80; }
-.color-btn[data-color="blue"] { background: #60a5fa; }
-
-/* =====================================
-   LEADERBOARD
-   ===================================== */
-#leaderboard-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(10, 15, 30, 0.85);
-  z-index: 50;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-#leaderboard-overlay.hidden {
-  display: none;
-}
-
-.leaderboard-dialog {
-  background: #0a0f1e;
-  padding: 24px;
-  border-radius: 20px;
-  width: 90%;
-  max-width: 450px;
-  text-align: center;
-  border: 1px solid rgba(255,255,255,0.15);
-}
-
-.leaderboard-entry {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px;
-  background: rgba(255,255,255,0.05);
-  border-radius: 12px;
-  margin-bottom: 8px;
-}
-
-.lb-avatar {
-  width: 50px;
-  height: 50px;
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.lb-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.winner-entry {
-  border: 2px solid #fbbf24;
-  box-shadow: 0 0 10px #fbbf24;
-}
-
-/* Rotate-to-landscape overlay */
-#rotate-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(5, 10, 25, 0.95);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 9999;
-}
-
-#rotate-overlay.hidden {
-  display: none;
-}
-
-.rotate-dialog {
-  background: #0b1020;
-  padding: 20px 24px;
-  border-radius: 16px;
-  border: 1px solid rgba(255,255,255,0.15);
-  text-align: center;
-  max-width: 260px;
-  font-size: 0.95rem;
-}
-
-/* =====================================
-   CHAT
-   ===================================== */
+/* ============================================================
+   CHAT AREA — unchanged mostly
+   ============================================================ */
 #chat-area {
-  margin-top: 12px;
-  background: rgba(7, 10, 26, 0.96);
-  border-radius: 20px;
-  padding: 12px;
-  box-shadow: 0 14px 30px rgba(0,0,0,0.55);
+  position: absolute;
+  right: 0;
+  top: 60px;
+  width: 300px;
+  max-height: 70%;
+  background: rgba(0,0,0,0.7);
+  border-radius: 18px 0 0 18px;
+  padding: 10px;
+  overflow: hidden;
+  box-shadow: -6px 0 25px rgba(0,0,0,0.7);
 }
 
-#chat-area h2 {
-  margin-top: 0;
-  font-size: 1rem;
-}
-
-#chat-messages {
-  max-height: 180px;
-  overflow-y: auto;
-  padding: 8px;
-  margin-bottom: 8px;
-  background: rgba(10, 15, 30, 0.9);
-  border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.06);
-  font-size: 0.85rem;
-}
-
-.chat-message {
-  margin-bottom: 4px;
-  display: flex;
-  gap: 6px;
-  align-items: flex-start;
-}
-
-.chat-name {
-  font-weight: 600;
-  margin-right: 4px;
-}
-
-.chat-text {
-  word-wrap: break-word;
-}
-
-#chat-input-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-#chat-emoji-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.chat-emoji {
-  border: none;
-  border-radius: 999px;
-  padding: 4px 6px;
-  cursor: pointer;
-  background: rgba(15,23,42,0.9);
-  font-size: 1.1rem;
-}
-
-#chat-input-container {
-  display: flex;
-  gap: 6px;
-  margin-top: 4px;
-}
-
-#chat-input {
-  flex: 1;
-  padding: 8px 10px;
-  border-radius: 999px;
-  border: none;
-  background: #131626;
-  color: #fff;
-  font-size: 0.9rem;
-}
-
-#chat-send {
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: none;
-  background: #22c55e;
-  color: #0b1220;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-/* A bit shorter on small screens */
-@media (max-width: 900px) {
-  #chat-messages {
-    max-height: 140px;
+/* ============================================================
+   RESPONSIVE / MOBILE LANDSCAPE
+   ============================================================ */
+@media (max-height: 520px) and (orientation: landscape) {
+  #table-oval {
+    width: 480px;
+    height: 260px;
+  }
+  #center-card-area .card {
+    width: 95px;
+    height: 140px;
+  }
+  .player-bubble {
+    width: 70px;
+    height: 70px;
   }
 }
 
-
-
-/* =====================================
-   RESPONSIVE
-   ===================================== */
-@media (max-width: 900px) {
-  #table-area {
-    flex-direction: column;
-  }
-
-  #players-panel {
-    width: 100%;
-  }
-
-  .hand-card {
-    width: 64px;
-    height: 96px;
-  }
-}
-
-@media (max-width: 600px) {
-  .hand-card {
-    width: 58px;
-    height: 88px;
-  }
-}
-
-/* =====================================
-   MOBILE LANDSCAPE COMPACT LAYOUT
-   ===================================== */
-@media (max-height: 500px) and (orientation: landscape) {
-  body { font-size: 14px; }
-  #page-container { padding: 8px; }
-  #main { gap: 8px; }
-  #players-panel { width: 190px; }
-  #table-layout { padding: 18px 10px; border-radius: 20px; }
-  .table-seat { min-width: 80px; }
-  .seat-wrapper { padding: 4px 8px; gap: 6px; }
-  .seat-avatar { width: 30px; height: 30px; }
-  .seat-name { font-size: 0.7rem; }
-  .seat-card-count { font-size: 0.68rem; }
-  #top-card-container .card,
-  #top-card-container .card-img { width: 70px; height: 110px; }
-  #hand-area { margin-top: 8px; padding: 10px; }
-  #hand-area h2 { font-size: 0.95rem; margin-bottom: 6px; }
-  #hand-cards { flex-wrap: nowrap; overflow-x: auto; gap: 6px; }
-  .hand-card { width: 58px; height: 88px; }
-  #actions button { padding: 6px 10px; font-size: 0.8rem; }
-  #chat-messages { max-height: 120px; }
-}

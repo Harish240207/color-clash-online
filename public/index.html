@@ -5,163 +5,170 @@
   <title>Color Clash Online</title>
   <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
+<div id="galaxy-bg"></div>
 
-  <!-- ===========================
-       GUEST LOGIN + AVATAR + JOIN
-       =========================== -->
-  <div id="login-screen">
-    <h1>Color Clash Online</h1>
+<!-- ============================================================
+     LOGIN SCREEN
+     ============================================================ -->
+<div id="login-screen">
+  <h1>Color Clash Online</h1>
 
-    <!-- Guest login button -->
-    <button id="guest-login-btn" class="primary-btn">Continue as Guest</button>
+  <button id="guest-login-btn" class="primary-btn">Continue as Guest</button>
 
-    <!-- Avatar selection -->
-    <div id="avatar-select" class="card-panel hidden">
+  <div id="avatar-select" class="card-panel hidden">
+    <h2>Select Your Avatar</h2>
 
-      <h2>Select Your Avatar</h2>
+    <h3>Choose an Emoji</h3>
+    <div id="emoji-grid"></div>
 
-      <h3>Choose an Emoji</h3>
-      <div id="emoji-grid">
-        😀 😎 🤖 👽 🐱 🐶 🦊 🦁 👺 👻 🐵 🦉
-      </div>
-
-      <h3>Or Upload a Photo</h3>
-      <input type="file" id="avatar-upload" accept="image/*"/>
-      <div id="avatar-preview"></div>
-    </div>
-
-    <!-- Join room -->
-    <div id="join-panel" class="card-panel hidden">
-      <label>
-        Your Name:
-        <input id="name-input" maxlength="20"/>
-      </label>
-      
-      <label>
-        Room Code:
-        <input id="room-code-input" maxlength="10"/>
-      </label>
-
-      <button id="join-button" class="primary-btn">Join Room</button>
-      <div id="join-error" class="error"></div>
-    </div>
+    <h3>Or Upload a Photo</h3>
+    <input type="file" id="avatar-upload" accept="image/*"/>
+    <div id="avatar-preview"></div>
   </div>
 
-  <!-- ===========================
-             GAME SCREEN
-       =========================== -->
-  <div id="game-screen" class="hidden">
+  <div id="join-panel" class="card-panel hidden">
+    <label>Your Name:
+      <input id="name-input" maxlength="20" />
+    </label>
 
-    <header>
-      <h1>Color Clash Online</h1>
-      <div id="room-info"></div>
-    </header>
+    <label>Room Code:
+      <input id="room-code-input" maxlength="10" />
+    </label>
 
-    <section id="table-area">
+    <button id="join-button" class="primary-btn">Join Room</button>
+    <div id="join-error" class="error"></div>
+  </div>
+</div>
 
-      <!-- Players sidebar -->
-      <div id="players-panel">
-        <h2>Players</h2>
-        <ul id="players-list"></ul>
-      </div>
+<!-- ============================================================
+     GAME SCREEN
+     ============================================================ -->
+<div id="game-screen" class="hidden">
 
-      <!-- Center panel -->
-      <div id="center-panel">
-        <div id="status-text"></div>
-        <div id="turn-timer"></div>
+  <div id="top-header">
+    <h1 class="header-title">Color Clash Online</h1>
+    <div id="room-info"></div>
+  </div>
 
-        <div id="table-layout">
-          <div class="table-seat" id="seat-top"></div>
-          <div class="table-seat" id="seat-left"></div>
+  <!-- ======================= ARENA CONTAINER ======================= -->
+  <div id="arena-container">
 
-          <div id="table-center">
-            <h3>Top Card</h3>
-            <div id="top-card" class="card big-card"></div>
-          </div>
+    <!-- FLOATING RING FOR 3+ PLAYERS -->
+    <div id="players-ring"></div>
 
-          <div class="table-seat" id="seat-right"></div>
-          <div class="table-seat" id="seat-bottom"></div>
-        </div>
+    <!-- 3D OVAL TABLE (always visible, but covered if classic layout) -->
+    <div id="table-oval"></div>
 
-        <div id="actions">
-          <button id="start-button">Start Game (Host)</button>
-          <button id="draw-button">Draw Card</button>
-        </div>
-      </div>
-    </section>
-
-    <section id="hand-area">
-      <h2>Your Hand</h2>
-      <div id="hand-cards"></div>
-      <div id="teammate-hands"></div>
-    </section>
-
-    <section id="chat-area">
-      <h2>Chat</h2>
-
-      <div id="chat-messages"></div>
-
-      <div id="chat-input-row">
-        <div id="chat-emoji-strip">
-          <button class="chat-emoji">😀</button>
-          <button class="chat-emoji">😎</button>
-          <button class="chat-emoji">😂</button>
-          <button class="chat-emoji">😍</button>
-          <button class="chat-emoji">😡</button>
-          <button class="chat-emoji">😭</button>
-          <button class="chat-emoji">👍</button>
-          <button class="chat-emoji">👏</button>
-        </div>
-
-        <div id="chat-input-container">
-          <input id="chat-input" maxlength="120" placeholder="Type a message..." />
-          <button id="chat-send">Send</button>
-        </div>
-      </div>
-    </section>
-
-
-    <button id="uno-button">UNO!</button>
-
-    <div id="message-area">
-      <div id="error-message" class="error"></div>
-      <div id="info-message"></div>
+    <!-- CENTER CARD AREA (stacked cards) -->
+    <div id="center-card-area">
+      <div class="stack1"></div>
+      <div class="stack2"></div>
+      <div id="top-card" class="card"></div>
     </div>
-     <button id="fullscreen-button">⛶</button>
+
+    <!-- CLASSIC SEAT LAYOUT (2-player mode) -->
+    <div id="table-layout">
+      <div class="table-seat" id="seat-top"></div>
+      <div class="table-seat" id="seat-bottom"></div>
+      <div class="table-seat" id="seat-left"></div>
+      <div class="table-seat" id="seat-right"></div>
+    </div>
 
   </div>
 
-  <!-- Wild color picker -->
-  <div id="color-picker-overlay" class="hidden">
-    <div class="color-picker-dialog">
-      <h3>Select Color</h3>
-      <div class="color-picker-buttons">
-        <button class="color-btn" data-color="red">Red</button>
-        <button class="color-btn" data-color="yellow">Yellow</button>
-        <button class="color-btn" data-color="green">Green</button>
-        <button class="color-btn" data-color="blue">Blue</button>
+  <!-- ======================= HAND AREA ======================= -->
+  <div id="hand-area">
+    <h2>Your Hand</h2>
+    <div id="hand-cards"></div>
+    <div id="teammate-hands"></div>
+  </div>
+
+  <!-- ======================= ACTIONS ======================= -->
+  <button id="uno-button">UNO!</button>
+  <button id="fullscreen-button">⛶</button>
+
+  <div id="actions" style="position:absolute; bottom:110px; left:50%; transform:translateX(-50%);">
+    <button id="start-button" class="secondary-btn">Start Game (Host)</button>
+    <button id="draw-button" class="secondary-btn">Draw Card</button>
+  </div>
+
+  <div id="status-text" style="text-align:center; margin-top:10px;"></div>
+  <div id="turn-timer" style="text-align:center; margin-top:4px; color:#ffe680;"></div>
+
+  <!-- ======================= CHAT PANEL ======================= -->
+  <div id="chat-area">
+    <h2>Chat</h2>
+    <div id="chat-messages"></div>
+
+    <div id="chat-input-row">
+      <div id="chat-emoji-strip">
+        <button class="chat-emoji">😀</button>
+        <button class="chat-emoji">😎</button>
+        <button class="chat-emoji">😂</button>
+        <button class="chat-emoji">😍</button>
+        <button class="chat-emoji">😡</button>
+        <button class="chat-emoji">😭</button>
+        <button class="chat-emoji">👍</button>
+        <button class="chat-emoji">👏</button>
+      </div>
+
+      <div id="chat-input-container">
+        <input id="chat-input" maxlength="120" placeholder="Type a message..." />
+        <button id="chat-send">Send</button>
       </div>
     </div>
   </div>
 
-  <!-- Leaderboard -->
-  <div id="leaderboard-overlay" class="hidden">
-    <div class="leaderboard-dialog">
-      <h2>Match Results</h2>
-      <div id="leaderboard-list"></div>
-      <button id="leaderboard-close" class="primary-btn">Close</button>
-    </div>
+  <!-- Messages -->
+  <div id="message-area" style="position:absolute; bottom:70px; left:50%; transform:translateX(-50%); text-align:center;">
+    <div id="error-message" class="error"></div>
+    <div id="info-message"></div>
   </div>
 
-  <!-- Rotate to landscape overlay -->
-  <div id="rotate-overlay" class="hidden">
-    <div class="rotate-dialog">
-      <p>For the best experience, rotate your device to landscape.</p>
+</div>
+
+<!-- ============================================================
+     WILD COLOR PICKER
+     ============================================================ -->
+<div id="color-picker-overlay" class="hidden">
+  <div class="color-picker-dialog">
+    <h3>Select Color</h3>
+    <div class="color-picker-buttons">
+      <button class="color-btn" data-color="red">Red</button>
+      <button class="color-btn" data-color="yellow">Yellow</button>
+      <button class="color-btn" data-color="green">Green</button>
+      <button class="color-btn" data-color="blue">Blue</button>
     </div>
   </div>
+</div>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="client.js"></script>
+<!-- ============================================================
+     LEADERBOARD
+     ============================================================ -->
+<div id="leaderboard-overlay" class="hidden">
+  <div class="leaderboard-dialog">
+    <h2>Match Results</h2>
+    <div id="leaderboard-list"></div>
+    <button id="leaderboard-close" class="primary-btn">Close</button>
+  </div>
+</div>
+
+<!-- ============================================================
+     ROTATE WARNING
+     ============================================================ -->
+<div id="rotate-overlay" class="hidden">
+  <div class="rotate-dialog">
+    <p>For best experience, rotate device to landscape.</p>
+  </div>
+</div>
+
+<!-- ============================================================
+     SCRIPTS
+     ============================================================ -->
+<script src="/socket.io/socket.io.js"></script>
+<script src="client.js"></script>
+
 </body>
 </html>
